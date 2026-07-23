@@ -6,16 +6,20 @@ export interface EntityFormValues {
   title: string;
   dueDate: string | null;
   labelNames: string[];
+  total?: number | null;
 }
 
 /**
  * Shared inline form for adding/editing tasks and subtasks:
  * title + optional due date + optional comma-separated labels.
+ * `showTotal` adds an order-total field — tasks only, not subtasks.
  */
 export default function EntityForm({
   initialTitle = "",
   initialDueDate = null,
   initialLabels = [],
+  initialTotal = null,
+  showTotal = false,
   submitLabel,
   placeholder,
   autoFocus = false,
@@ -25,6 +29,8 @@ export default function EntityForm({
   initialTitle?: string;
   initialDueDate?: string | null;
   initialLabels?: string[];
+  initialTotal?: number | null;
+  showTotal?: boolean;
   submitLabel: string;
   placeholder: string;
   autoFocus?: boolean;
@@ -34,6 +40,7 @@ export default function EntityForm({
   const [title, setTitle] = useState(initialTitle);
   const [dueDate, setDueDate] = useState(initialDueDate ?? "");
   const [labels, setLabels] = useState(initialLabels.join(", "));
+  const [total, setTotal] = useState(initialTotal === null ? "" : String(initialTotal));
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,12 +50,14 @@ export default function EntityForm({
       title: trimmed,
       dueDate: dueDate || null,
       labelNames: labels.split(",").map((s) => s.trim()).filter(Boolean),
+      ...(showTotal ? { total: total.trim() === "" ? null : Number(total) } : {}),
     });
     // Reset only in "add" mode (edit forms are closed by the parent).
     if (!onCancel) {
       setTitle("");
       setDueDate("");
       setLabels("");
+      setTotal("");
     }
   };
 
@@ -80,6 +89,19 @@ export default function EntityForm({
           className={`${inputClass} min-w-0 flex-[1.4]`}
         />
       </div>
+      {showTotal && (
+        <input
+          type="number"
+          inputMode="decimal"
+          step="any"
+          min="0"
+          value={total}
+          onChange={(e) => setTotal(e.target.value)}
+          placeholder="Order total (optional)"
+          aria-label="Order total"
+          className={inputClass}
+        />
+      )}
       <div className="flex gap-2">
         {onCancel && (
           <button
