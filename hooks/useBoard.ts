@@ -89,12 +89,20 @@ export function useBoard(enabled: boolean) {
   // ----- tasks ------------------------------------------------------------
 
   const addTask = useCallback(
-    (title: string, dueDate: string | null, labelNames: string[], createdBy: string | null) => {
+    (
+      title: string,
+      dueDate: string | null,
+      labelNames: string[],
+      createdBy: string | null,
+      total: number | null = null
+    ) => {
       const now = new Date().toISOString();
       const task: Task = {
         id: crypto.randomUUID(),
         title,
         due_date: dueDate,
+        total,
+        archived_at: null,
         created_by: createdBy,
         created_at: now,
         updated_at: now,
@@ -105,7 +113,7 @@ export function useBoard(enabled: boolean) {
         (prev) => [...prev, task],
         () =>
           db.createTask(
-            { id: task.id, title, due_date: dueDate, created_by: createdBy },
+            { id: task.id, title, due_date: dueDate, total, created_by: createdBy },
             labelNames
           ),
         "Couldn't add the task."
@@ -140,6 +148,29 @@ export function useBoard(enabled: boolean) {
         (prev) => prev.filter((t) => t.id !== id),
         () => db.deleteTask(id),
         "Couldn't delete the task."
+      ),
+    [mutate]
+  );
+
+  const archiveTask = useCallback(
+    (id: string) =>
+      mutate(
+        (prev) =>
+          prev.map((t) =>
+            t.id === id ? { ...t, archived_at: new Date().toISOString() } : t
+          ),
+        () => db.archiveTask(id),
+        "Couldn't mark the order fulfilled."
+      ),
+    [mutate]
+  );
+
+  const unarchiveTask = useCallback(
+    (id: string) =>
+      mutate(
+        (prev) => prev.map((t) => (t.id === id ? { ...t, archived_at: null } : t)),
+        () => db.unarchiveTask(id),
+        "Couldn't unarchive the order."
       ),
     [mutate]
   );
@@ -291,6 +322,8 @@ export function useBoard(enabled: boolean) {
     addTask,
     editTask,
     removeTask,
+    archiveTask,
+    unarchiveTask,
     addSubtask,
     editSubtask,
     toggleSubtask,

@@ -1,9 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import DueBanner from "@/components/DueBanner";
 import EntityForm from "@/components/EntityForm";
+import ExportPanel from "@/components/ExportPanel";
 import LabelTabs from "@/components/LabelTabs";
 import NamePicker from "@/components/NamePicker";
+import PushToggle from "@/components/PushToggle";
 import TaskCard from "@/components/TaskCard";
 import Toast from "@/components/Toast";
 import { useBoard } from "@/hooks/useBoard";
@@ -31,6 +34,7 @@ export default function Home() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [changingName, setChangingName] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
+  const [showFulfilled, setShowFulfilled] = useState(false);
 
   const labels = useMemo(() => labelsInUse(board.tasks), [board.tasks]);
   // If the active label was deleted or fell out of use, fall back to All.
@@ -38,18 +42,27 @@ export default function Home() {
     ? activeLabelId
     : null;
 
-  // Filter: a label tab shows tasks where the task OR any subtask has the
-  // label; urgency sorting still applies within the filtered set.
+  const fulfilledCount = useMemo(
+    () => board.tasks.filter((t) => t.archived_at !== null).length,
+    [board.tasks]
+  );
+
+  // Filter: fulfilled orders are hidden unless toggled on; a label tab
+  // shows tasks where the task OR any subtask has the label; urgency
+  // sorting still applies within the filtered set.
   const visibleTasks = useMemo(() => {
-    const filtered = activeId
-      ? board.tasks.filter(
-          (t) =>
-            t.labels.some((l) => l.id === activeId) ||
-            t.subtasks.some((st) => st.labels.some((l) => l.id === activeId))
-        )
-      : board.tasks;
+    let filtered = showFulfilled
+      ? board.tasks
+      : board.tasks.filter((t) => t.archived_at === null);
+    if (activeId) {
+      filtered = filtered.filter(
+        (t) =>
+          t.labels.some((l) => l.id === activeId) ||
+          t.subtasks.some((st) => st.labels.some((l) => l.id === activeId))
+      );
+    }
     return sortByUrgency(filtered);
-  }, [board.tasks, activeId]);
+  }, [board.tasks, activeId, showFulfilled]);
 
   const toggleExpanded = (id: string) =>
     setExpandedIds((prev) => {
@@ -80,17 +93,22 @@ export default function Home() {
       {/* Header: app name + persistent identity chip */}
       <header className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold tracking-tight">TaskTracker</h1>
-        <button
-          onClick={() => setChangingName(true)}
-          className="flex min-h-11 items-center gap-1.5 rounded-full bg-white px-3.5 text-sm font-medium text-neutral-700 active:bg-neutral-100"
-          aria-label="Change your display name"
-        >
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
-            {(name ?? "?").slice(0, 1).toUpperCase()}
-          </span>
-          {name ?? "Set name"}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <PushToggle createdBy={name} />
+          <button
+            onClick={() => setChangingName(true)}
+            className="flex min-h-11 items-center gap-1.5 rounded-full bg-white px-3.5 text-sm font-medium text-neutral-700 active:bg-neutral-100"
+            aria-label="Change your display name"
+          >
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
+              {(name ?? "?").slice(0, 1).toUpperCase()}
+            </span>
+            {name ?? "Set name"}
+          </button>
+        </div>
       </header>
+
+      <DueBanner tasks={board.tasks.filter((t) => t.archived_at === null)} />
 
       <div className="sticky top-0 z-10 -mx-4 mt-3 bg-neutral-100/95 px-4 py-1 backdrop-blur">
         <LabelTabs
@@ -102,6 +120,19 @@ export default function Home() {
         />
       </div>
 
+      {fulfilledCount > 0 && (
+        <button
+          onClick={() => setShowFulfilled((v) => !v)}
+          className="mt-2 min-h-11 text-sm font-medium text-neutral-500 active:text-neutral-700"
+        >
+          {showFulfilled
+            ? "Hide fulfilled orders"
+            : `Show ${fulfilledCount} fulfilled order${fulfilledCount === 1 ? "" : "s"}`}
+        </button>
+      )}
+
+      <ExportPanel />
+
       {/* Add task */}
       <div className="mt-3">
         {addingTask ? (
@@ -112,9 +143,10 @@ export default function Home() {
             <EntityForm
               submitLabel="Add task"
               placeholder="What needs doing?"
+              showTotal
               autoFocus
-              onSubmit={({ title, dueDate, labelNames }) => {
-                board.addTask(title, dueDate, labelNames, name);
+              onSubmit={({ title, dueDate, labelNames, total }) => {
+                board.addTask(title, dueDate, labelNames, name, total ?? null);
                 setAddingTask(false);
               }}
               onCancel={() => setAddingTask(false)}
@@ -139,15 +171,30 @@ export default function Home() {
         </div>
       ) : visibleTasks.length === 0 ? (
         <div className="mt-12 text-center">
-          <p className="text-3xl">{board.tasks.length === 0 ? "🌱" : "🔍"}</p>
+          <p className="text-3xl">
+            {board.tasks.length === 0
+              ? "🌱"
+              : !showFulfilled && fulfilledCount === board.tasks.length
+                ? "✅"
+                : "🔍"}
+          </p>
           <p className="mt-2 font-medium text-neutral-700">
             {board.tasks.length === 0
               ? "Nothing here yet"
-              : "No tasks with this label"}
+              : !showFulfilled && fulfilledCount === board.tasks.length
+                ? "Every order is fulfilled"
+                : "No tasks with this label"}
           </p>
           <p className="mt-1 text-sm text-neutral-500">
             {board.tasks.length === 0 ? (
               "Add the first task and get the team rolling."
+            ) : !showFulfilled && fulfilledCount === board.tasks.length ? (
+              <button
+                className="font-medium text-indigo-600 underline"
+                onClick={() => setShowFulfilled(true)}
+              >
+                Show fulfilled orders
+              </button>
             ) : (
               <button
                 className="font-medium text-indigo-600 underline"
@@ -170,6 +217,8 @@ export default function Home() {
                 board.editTask(task.id, patch, labelNames)
               }
               onDeleteTask={() => board.removeTask(task.id)}
+              onArchiveTask={() => board.archiveTask(task.id)}
+              onUnarchiveTask={() => board.unarchiveTask(task.id)}
               onAddSubtask={(title, dueDate, labelNames) =>
                 board.addSubtask(task.id, title, dueDate, labelNames, name)
               }
