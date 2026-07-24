@@ -22,8 +22,6 @@ export interface Task {
   id: string;
   title: string;
   due_date: string | null; // ISO date "YYYY-MM-DD"
-  total: number | null; // order total; tasks only, subtasks don't carry one
-  archived_at: string | null; // set when an order is marked fulfilled
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -35,8 +33,6 @@ export interface Task {
 export interface TaskPatch {
   title?: string;
   due_date?: string | null;
-  total?: number | null;
-  archived_at?: string | null;
 }
 
 /** Fields the user can edit on a subtask. */
