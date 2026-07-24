@@ -89,7 +89,6 @@ export interface NewTask {
   id: string; // generated client-side so optimistic state matches the server row
   title: string;
   due_date: string | null;
-  total: number | null;
   created_by: string | null;
 }
 
@@ -118,24 +117,6 @@ export async function updateTask(
 
 export async function deleteTask(id: string): Promise<void> {
   const { error } = await getSupabase().from("tasks").delete().eq("id", id);
-  if (error) throw error;
-}
-
-/** Mark an order fulfilled: it leaves the main board but stays in the
- *  database (and in reports) instead of being deleted. */
-export async function archiveTask(id: string): Promise<void> {
-  const { error } = await getSupabase()
-    .from("tasks")
-    .update({ archived_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
-}
-
-export async function unarchiveTask(id: string): Promise<void> {
-  const { error } = await getSupabase()
-    .from("tasks")
-    .update({ archived_at: null })
-    .eq("id", id);
   if (error) throw error;
 }
 
@@ -200,35 +181,5 @@ export async function renameLabel(id: string, newName: string): Promise<void> {
  *  association but are otherwise untouched. */
 export async function deleteLabel(id: string): Promise<void> {
   const { error } = await getSupabase().from("labels").delete().eq("id", id);
-  if (error) throw error;
-}
-
-// ---------------------------------------------------------------------------
-// Push subscriptions (due-date alerts)
-// ---------------------------------------------------------------------------
-
-export interface PushSubscriptionRow {
-  endpoint: string;
-  p256dh: string;
-  auth: string;
-  created_by: string | null;
-}
-
-/** Upsert by endpoint so re-subscribing (e.g. after clearing the browser's
- *  push registration) doesn't create duplicate rows. */
-export async function savePushSubscription(
-  sub: PushSubscriptionRow
-): Promise<void> {
-  const { error } = await getSupabase()
-    .from("push_subscriptions")
-    .upsert(sub, { onConflict: "endpoint" });
-  if (error) throw error;
-}
-
-export async function deletePushSubscription(endpoint: string): Promise<void> {
-  const { error } = await getSupabase()
-    .from("push_subscriptions")
-    .delete()
-    .eq("endpoint", endpoint);
   if (error) throw error;
 }

@@ -16,8 +16,6 @@ export default function TaskCard({
   onToggleExpand,
   onEditTask,
   onDeleteTask,
-  onArchiveTask,
-  onUnarchiveTask,
   onAddSubtask,
   onEditSubtask,
   onToggleSubtask,
@@ -28,8 +26,6 @@ export default function TaskCard({
   onToggleExpand: () => void;
   onEditTask: (patch: TaskPatch, labelNames: string[]) => void;
   onDeleteTask: () => void;
-  onArchiveTask: () => void;
-  onUnarchiveTask: () => void;
   onAddSubtask: (
     title: string,
     dueDate: string | null,
@@ -45,30 +41,24 @@ export default function TaskCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [confirmingArchive, setConfirmingArchive] = useState(false);
 
-  const archived = task.archived_at !== null;
   const doneCount = task.subtasks.filter((st) => st.done).length;
   // The badge shows the task's *effective* urgency (own date or soonest
   // open subtask date) so the collapsed card matches its sort position.
   const effective = effectiveDueDate(task);
 
   return (
-    <li
-      className={`rounded-2xl bg-white p-4 ${archived ? "opacity-60" : ""}`}
-    >
+    <li className="rounded-2xl bg-white p-4">
       {editing ? (
         <EntityForm
           initialTitle={task.title}
           initialDueDate={task.due_date}
           initialLabels={task.labels.map((l) => l.name)}
-          initialTotal={task.total}
-          showTotal
           submitLabel="Save"
           placeholder="Task title"
           autoFocus
-          onSubmit={({ title, dueDate, labelNames, total }) => {
-            onEditTask({ title, due_date: dueDate, total }, labelNames);
+          onSubmit={({ title, dueDate, labelNames }) => {
+            onEditTask({ title, due_date: dueDate }, labelNames);
             setEditing(false);
           }}
           onCancel={() => setEditing(false)}
@@ -85,21 +75,10 @@ export default function TaskCard({
               <span className="min-w-0 flex-1 text-base font-medium text-neutral-900">
                 {task.title}
               </span>
-              {archived ? (
-                <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-                  Fulfilled
-                </span>
-              ) : (
-                <DueBadge date={effective} />
-              )}
+              <DueBadge date={effective} />
             </span>
-            <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <span className="mt-1.5 block">
               <LabelChips labels={task.labels} />
-              {task.total !== null && (
-                <span className="inline-flex shrink-0 items-center rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-600">
-                  Total: {task.total}
-                </span>
-              )}
             </span>
             <ProgressBar done={doneCount} total={task.subtasks.length} />
           </button>
@@ -137,24 +116,9 @@ export default function TaskCard({
 
               <div className="mt-3 flex items-center justify-between">
                 <p className="text-xs text-neutral-400">
-                  {task.created_by ? `Added by ${task.created_by}` : " "}
+                  {task.created_by ? `Added by ${task.created_by}` : " "}
                 </p>
-                <div className="flex flex-wrap justify-end gap-1">
-                  {archived ? (
-                    <button
-                      onClick={onUnarchiveTask}
-                      className="min-h-11 rounded-xl px-3 text-sm font-medium text-neutral-600 active:bg-neutral-100"
-                    >
-                      Unarchive
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setConfirmingArchive(true)}
-                      className="min-h-11 rounded-xl px-3 text-sm font-medium text-emerald-600 active:bg-emerald-50"
-                    >
-                      Mark fulfilled
-                    </button>
-                  )}
+                <div className="flex gap-1">
                   <button
                     onClick={() => setEditing(true)}
                     className="min-h-11 rounded-xl px-3 text-sm font-medium text-indigo-600 active:bg-indigo-50"
@@ -177,24 +141,12 @@ export default function TaskCard({
       <ConfirmDialog
         open={confirmingDelete}
         title="Delete task?"
-        message={`“${task.title}” and all of its subtasks will be removed. This can't be undone — if you just want it off the board, use "Mark fulfilled" instead.`}
+        message={`“${task.title}” and all of its subtasks will be removed.`}
         onConfirm={() => {
           setConfirmingDelete(false);
           onDeleteTask();
         }}
         onCancel={() => setConfirmingDelete(false)}
-      />
-
-      <ConfirmDialog
-        open={confirmingArchive}
-        title="Mark this order fulfilled?"
-        message={`“${task.title}” will leave the main board but stays in reports and exports. You can unarchive it later.`}
-        confirmLabel="Mark fulfilled"
-        onConfirm={() => {
-          setConfirmingArchive(false);
-          onArchiveTask();
-        }}
-        onCancel={() => setConfirmingArchive(false)}
       />
     </li>
   );
