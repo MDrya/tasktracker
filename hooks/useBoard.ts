@@ -36,6 +36,23 @@ export function useBoard(enabled: boolean) {
     setTasks(await db.fetchBoard());
   }, []);
 
+  // Google Sheets mirror. Only the client that made the change schedules a
+  // sync (rather than everyone reacting to the realtime event), and rapid
+  // edits collapse into one push. Best-effort by design: the board is the
+  // source of truth, so a failed sync is never surfaced to the user — the
+  // next change re-syncs the whole sheet anyway.
+  const sheetSyncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined
+  );
+  const scheduleSheetSync = useCallback(() => {
+    clearTimeout(sheetSyncTimer.current);
+    sheetSyncTimer.current = setTimeout(() => {
+      fetch("/api/sheets/sync", { method: "POST" }).catch(() => {});
+    }, 3000);
+  }, []);
+
+  useEffect(() => () => clearTimeout(sheetSyncTimer.current), []);
+
   // Initial load + realtime subscription (any change on any board table
   // triggers one debounced refetch — simple and always consistent).
   useEffect(() => {
@@ -78,23 +95,31 @@ export function useBoard(enabled: boolean) {
       try {
         await persist();
         await refresh();
+        scheduleSheetSync();
       } catch {
         setTasks(snapshot);
         setError(failMessage);
       }
     },
-    [refresh]
+    [refresh, scheduleSheetSync]
   );
 
   // ----- tasks ------------------------------------------------------------
 
   const addTask = useCallback(
-    (title: string, dueDate: string | null, labelNames: string[], createdBy: string | null) => {
+    (
+      title: string,
+      dueDate: string | null,
+      labelNames: string[],
+      createdBy: string | null,
+      total: number | null = null
+    ) => {
       const now = new Date().toISOString();
       const task: Task = {
         id: crypto.randomUUID(),
         title,
         due_date: dueDate,
+        total,
         created_by: createdBy,
         created_at: now,
         updated_at: now,
@@ -105,7 +130,7 @@ export function useBoard(enabled: boolean) {
         (prev) => [...prev, task],
         () =>
           db.createTask(
-            { id: task.id, title, due_date: dueDate, created_by: createdBy },
+            { id: task.id, title, due_date: dueDate, total, created_by: createdBy },
             labelNames
           ),
         "Couldn't add the task."

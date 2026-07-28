@@ -7,7 +7,8 @@ backed by Supabase (Postgres + Realtime), deployable to Vercel.
 
 ## Features
 
-- Tasks with subtasks, due dates, and many-to-many labels
+- Tasks (orders) with subtasks, due dates, an optional **order total**, and
+  many-to-many labels
 - Label tabs act as workspaces ("All" + one tab per label in use); renaming and
   deleting labels updates everywhere
 - Urgency sorting: each task sorts by the soonest of its own due date and its
@@ -16,6 +17,9 @@ backed by Supabase (Postgres + Realtime), deployable to Vercel.
   none = gray
 - Progress bar per task (completed subtasks ÷ total; hidden when a task has no
   subtasks)
+- Finished orders (every subtask checked off) drop to the bottom of the board
+- Optional **Google Sheets mirror**: the board writes itself into a spreadsheet
+  a few seconds after any change
 - Live updates via Supabase Realtime — everyone viewing the board sees changes
   as they happen
 - Optimistic UI: every change applies instantly and rolls back with a toast if
@@ -90,6 +94,47 @@ start adding tasks. Open a second browser window to see realtime sync.
    `NEXT_PUBLIC_SUPABASE_ANON_KEY` with the same values as `.env.local`.
 4. Deploy, then share the URL with the team.
 
+## Sync to Google Sheets (optional)
+
+The board can mirror itself into a Google Sheet. This is one-way — the app
+writes to the sheet, and edits made in the sheet are overwritten on the next
+sync, so keep the app as the place you actually type.
+
+1. Create (or open) the spreadsheet you want to use.
+2. **Extensions → Apps Script**. Delete whatever is in the editor and paste
+   the contents of [`google-apps-script.gs`](google-apps-script.gs).
+3. Replace `PASTE_THE_SAME_SECRET_HERE` with any random string — this is
+   your shared secret. Save.
+4. **Deploy → New deployment → Web app**, with **Execute as: Me** and
+   **Who has access: Anyone**, then Authorize. Copy the deployment URL
+   (it looks like `https://script.google.com/macros/s/AKfy…/exec`).
+
+   "Anyone" is required because TaskTracker's server calls that URL without
+   a Google login. The shared secret is what actually protects it, so treat
+   both the URL and the secret as private.
+5. Put both values in `.env.local` (and in Vercel's environment variables
+   for the deployed app):
+
+```
+GOOGLE_SHEETS_WEBAPP_URL=https://script.google.com/macros/s/AKfy…/exec
+SHEETS_SHARED_SECRET=the-same-string-you-put-in-the-script
+```
+
+6. Restart the dev server (or redeploy). Add or tick something on the board;
+   the sheet fills in a few seconds later.
+
+The sheet gets one row per subtask, with the parent order repeated on each
+row so you can sort and filter freely:
+
+| Order | Order total | Order due | Order status | Subtask | Subtask due | Subtask done |
+|-------|-------------|-----------|--------------|---------|-------------|--------------|
+
+Orders with no subtasks get a single row with the subtask columns blank.
+
+**Only the first sheet is touched** — every sync clears and rewrites it, so
+don't keep hand-written notes there. Extra sheets in the same spreadsheet
+are left alone.
+
 ## Design decisions / defaults chosen
 
 - **Zero-subtask progress**: the progress bar is hidden (not shown as 0%) —
@@ -103,6 +148,22 @@ start adding tasks. Open a second browser window to see realtime sync.
   board refetch. Simple, always consistent, and cheap at team-board scale.
 - **Deleting a label** removes it from every task/subtask (join rows cascade)
   but never deletes tasks.
+- **Order total is a plain number on main tasks only**: no currency symbol or
+  formatting, and subtasks never carry one (`showTotal` in
+  `components/EntityForm.tsx`).
+- **Adding a subtask collapses the card**, returning you to the board
+  overview rather than leaving the card open (`components/TaskCard.tsx`).
+- **Finished orders sink to the bottom**: a task counts as finished once
+  every subtask is checked. A task with *no* subtasks can never be finished —
+  there's nothing to check off — so it keeps its normal urgency position
+  (`isTaskComplete` in `lib/urgency.ts`).
+- **Sheet sync is a mirror, not a log**: each sync replaces the sheet's
+  contents, so it can't drift or double up. It's best-effort and never shows
+  an error — the board is the source of truth and the next change re-syncs
+  everything anyway.
+- **Only the editing client syncs**: the device that made the change pushes
+  to the sheet (debounced 3s), rather than every open browser reacting to the
+  realtime event and firing duplicate writes.
 - **Security posture (v1)**: the anon key + permissive RLS policies mean
   anyone with the URL can edit the board — that is the product intent for v1.
   The upgrade path is Supabase Auth + user-scoped RLS policies.
