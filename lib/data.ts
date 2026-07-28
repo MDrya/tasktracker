@@ -89,6 +89,7 @@ export interface NewTask {
   id: string; // generated client-side so optimistic state matches the server row
   title: string;
   due_date: string | null;
+  total: number | null;
   created_by: string | null;
 }
 

@@ -56,11 +56,30 @@ export function dueLabel(iso: string): string {
 }
 
 /**
+ * A task counts as finished once every one of its subtasks is checked off.
+ *
+ * A task with no subtasks can never be "complete" — there's nothing to
+ * check off — so it keeps its normal urgency position rather than being
+ * treated as done and sent to the bottom.
+ */
+export function isTaskComplete(task: Task): boolean {
+  return task.subtasks.length > 0 && task.subtasks.every((st) => st.done);
+}
+
+/**
  * Sort tasks by effective due date, soonest first. Tasks with no date
  * anywhere sort last; ties break by creation time so order is stable.
+ *
+ * Finished tasks always sink below unfinished ones, so checking off the
+ * last subtask visibly drops the task to the bottom of the board. Urgency
+ * ordering still applies within each group.
  */
 export function sortByUrgency(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
+    const ca = isTaskComplete(a);
+    const cb = isTaskComplete(b);
+    if (ca !== cb) return ca ? 1 : -1;
+
     const da = effectiveDueDate(a);
     const db = effectiveDueDate(b);
     if (da && db && da !== db) return da < db ? -1 : 1;

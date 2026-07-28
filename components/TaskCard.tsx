@@ -54,11 +54,13 @@ export default function TaskCard({
           initialTitle={task.title}
           initialDueDate={task.due_date}
           initialLabels={task.labels.map((l) => l.name)}
+          initialTotal={task.total}
+          showTotal
           submitLabel="Save"
           placeholder="Task title"
           autoFocus
-          onSubmit={({ title, dueDate, labelNames }) => {
-            onEditTask({ title, due_date: dueDate }, labelNames);
+          onSubmit={({ title, dueDate, labelNames, total }) => {
+            onEditTask({ title, due_date: dueDate, total }, labelNames);
             setEditing(false);
           }}
           onCancel={() => setEditing(false)}
@@ -77,8 +79,13 @@ export default function TaskCard({
               </span>
               <DueBadge date={effective} />
             </span>
-            <span className="mt-1.5 block">
+            <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <LabelChips labels={task.labels} />
+              {task.total !== null && (
+                <span className="inline-flex shrink-0 items-center rounded-full bg-neutral-100 px-2.5 py-0.5 text-xs font-medium text-neutral-600">
+                  Total: {task.total}
+                </span>
+              )}
             </span>
             <ProgressBar done={doneCount} total={task.subtasks.length} />
           </button>
@@ -108,9 +115,13 @@ export default function TaskCard({
                 <EntityForm
                   submitLabel="Add subtask"
                   placeholder="Subtask title"
-                  onSubmit={({ title, dueDate, labelNames }) =>
-                    onAddSubtask(title, dueDate, labelNames)
-                  }
+                  onSubmit={({ title, dueDate, labelNames }) => {
+                    onAddSubtask(title, dueDate, labelNames);
+                    // Collapse back to the main-task view once a subtask is
+                    // added, so the board returns to its overview state
+                    // instead of leaving the card hanging open.
+                    onToggleExpand();
+                  }}
                 />
               </div>
 

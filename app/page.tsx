@@ -112,9 +112,10 @@ export default function Home() {
             <EntityForm
               submitLabel="Add task"
               placeholder="What needs doing?"
+              showTotal
               autoFocus
-              onSubmit={({ title, dueDate, labelNames }) => {
-                board.addTask(title, dueDate, labelNames, name);
+              onSubmit={({ title, dueDate, labelNames, total }) => {
+                board.addTask(title, dueDate, labelNames, name, total ?? null);
                 setAddingTask(false);
               }}
               onCancel={() => setAddingTask(false)}
