@@ -66,6 +66,52 @@ export function isTaskComplete(task: Task): boolean {
   return task.subtasks.length > 0 && task.subtasks.every((st) => st.done);
 }
 
+export interface DueSummary {
+  overdue: number;
+  today: number;
+  soon: number; // due within SOON_DAYS, not counting today
+  total: number;
+}
+
+/** How many days ahead still counts as "warn me about this". */
+export const SOON_DAYS = 2;
+
+/**
+ * Counts of orders needing attention, by effective due date.
+ *
+ * Finished orders are excluded — warning about work that is already done
+ * is just noise, and it would make the banner impossible to clear.
+ *
+ * Shared by the in-app banner and the daily push digest so the two can
+ * never drift into disagreeing about what counts as urgent.
+ */
+export function summarizeDue(tasks: Task[]): DueSummary {
+  let overdue = 0;
+  let today = 0;
+  let soon = 0;
+
+  for (const task of tasks) {
+    if (isTaskComplete(task)) continue;
+    const due = effectiveDueDate(task);
+    if (!due) continue;
+    const days = daysUntil(due);
+    if (days < 0) overdue++;
+    else if (days === 0) today++;
+    else if (days <= SOON_DAYS) soon++;
+  }
+
+  return { overdue, today, soon, total: overdue + today + soon };
+}
+
+/** Human phrase for a summary, e.g. "2 overdue · 1 due today". */
+export function describeDue(summary: DueSummary): string {
+  const parts: string[] = [];
+  if (summary.overdue > 0) parts.push(`${summary.overdue} overdue`);
+  if (summary.today > 0) parts.push(`${summary.today} due today`);
+  if (summary.soon > 0) parts.push(`${summary.soon} due soon`);
+  return parts.join(" · ");
+}
+
 /**
  * Sort tasks by effective due date, soonest first. Tasks with no date
  * anywhere sort last; ties break by creation time so order is stable.

@@ -184,3 +184,33 @@ export async function deleteLabel(id: string): Promise<void> {
   const { error } = await getSupabase().from("labels").delete().eq("id", id);
   if (error) throw error;
 }
+
+// ---------------------------------------------------------------------------
+// Push subscriptions (due-date alerts)
+// ---------------------------------------------------------------------------
+
+export interface PushSubscriptionRow {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  created_by: string | null;
+}
+
+/** Upsert by endpoint so re-subscribing on the same device replaces its
+ *  row instead of piling up duplicates that all buzz the same phone. */
+export async function savePushSubscription(
+  sub: PushSubscriptionRow
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("push_subscriptions")
+    .upsert(sub, { onConflict: "endpoint" });
+  if (error) throw error;
+}
+
+export async function deletePushSubscription(endpoint: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("push_subscriptions")
+    .delete()
+    .eq("endpoint", endpoint);
+  if (error) throw error;
+}
