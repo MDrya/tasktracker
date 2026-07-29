@@ -11,23 +11,45 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return output;
 }
 
+/** iPadOS 13+ reports itself as a Mac, so touch points are the giveaway. */
+function isIOS(): boolean {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+/** True once the app is launched from the Home Screen rather than a tab. */
+function isStandalone(): boolean {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    // Safari's own non-standard flag, still the only reliable one on iOS.
+    (window.navigator as Navigator & { standalone?: boolean }).standalone ===
+      true
+  );
+}
+
 /**
  * Opt-in browser push for due-date alerts. Per-device, not per-person —
  * there's no login, so each browser that subscribes gets the daily digest
  * independently (see app/api/cron/due-digest).
+ *
+ * iOS only exposes the push API to a site installed to the Home Screen, so
+ * `needsInstall` separates "this iPhone can do push once installed" from
+ * "this browser can't do push at all". Without that distinction the button
+ * would simply vanish on iPhone, which reads as a broken feature.
  */
 export function usePushSubscription(createdBy: string | null) {
   const [supported, setSupported] = useState(false);
+  const [needsInstall, setNeedsInstall] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setSupported(
-      typeof window !== "undefined" &&
-        "serviceWorker" in navigator &&
-        "PushManager" in window &&
-        Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)
-    );
+    const hasKey = Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
+    const hasApi = "serviceWorker" in navigator && "PushManager" in window;
+    setSupported(hasApi && hasKey);
+    setNeedsInstall(!hasApi && hasKey && isIOS() && !isStandalone());
   }, []);
 
   useEffect(() => {
@@ -80,5 +102,5 @@ export function usePushSubscription(createdBy: string | null) {
     }
   }, []);
 
-  return { supported, subscribed, busy, subscribe, unsubscribe };
+  return { supported, needsInstall, subscribed, busy, subscribe, unsubscribe };
 }
