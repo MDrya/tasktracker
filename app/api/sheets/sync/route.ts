@@ -37,26 +37,34 @@ export async function POST() {
   const tasks = sortByUrgency(await fetchBoard());
 
   const rows: (string | number | null)[][] = [];
+  // Which row runs belong to one order, so the sheet can merge the order
+  // columns vertically. Grouping is by identity, not by matching text:
+  // two different orders can share a title, total and due date, and
+  // merging those into one block would misrepresent them as a single order.
+  const groups: { start: number; count: number }[] = [];
+
   for (const task of tasks) {
+    const start = rows.length;
     const status = isTaskComplete(task) ? "Done" : "In progress";
     if (task.subtasks.length === 0) {
       rows.push([task.title, task.total, task.due_date, status, "", "", ""]);
-      continue;
+    } else {
+      for (const st of task.subtasks) {
+        rows.push([
+          task.title,
+          task.total,
+          task.due_date,
+          status,
+          st.title,
+          st.due_date,
+          st.done ? "Yes" : "No",
+        ]);
+      }
     }
-    for (const st of task.subtasks) {
-      rows.push([
-        task.title,
-        task.total,
-        task.due_date,
-        status,
-        st.title,
-        st.due_date,
-        st.done ? "Yes" : "No",
-      ]);
-    }
+    groups.push({ start, count: rows.length - start });
   }
 
-  const payload = JSON.stringify({ secret, headers: HEADERS, rows });
+  const payload = JSON.stringify({ secret, headers: HEADERS, rows, groups });
 
   // Apps Script answers a POST with a 302 to a one-shot script.google-
   // usercontent.com URL, and that hop fails outright maybe 1 call in 8 —
@@ -87,7 +95,12 @@ export async function POST() {
 
     // Apps Script also answers 200 when it refuses the request, so the
     // body is the only trustworthy success signal.
-    let result: { ok?: boolean; error?: string; rows?: number };
+    let result: {
+      ok?: boolean;
+      error?: string;
+      rows?: number;
+      merged?: number;
+    };
     try {
       result = JSON.parse(body);
     } catch {
@@ -104,6 +117,9 @@ export async function POST() {
     return NextResponse.json({
       ok: true,
       rows: result.rows ?? rows.length,
+      // Absent when the Sheet is still running an older deployed version
+      // of the script, which is the usual reason merging/colour go missing.
+      merged: result.merged,
       attempts: attempt + 1,
     });
   }
