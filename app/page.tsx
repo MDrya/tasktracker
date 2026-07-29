@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import DueBanner from "@/components/DueBanner";
 import EntityForm from "@/components/EntityForm";
 import LabelTabs from "@/components/LabelTabs";
 import NamePicker from "@/components/NamePicker";
+import PushToggle from "@/components/PushToggle";
 import TaskCard from "@/components/TaskCard";
 import Toast from "@/components/Toast";
 import { useBoard } from "@/hooks/useBoard";
@@ -80,17 +82,22 @@ export default function Home() {
       {/* Header: app name + persistent identity chip */}
       <header className="flex items-center justify-between gap-2">
         <h1 className="text-xl font-bold tracking-tight">TaskTracker</h1>
-        <button
-          onClick={() => setChangingName(true)}
-          className="flex min-h-11 items-center gap-1.5 rounded-full bg-white px-3.5 text-sm font-medium text-neutral-700 active:bg-neutral-100"
-          aria-label="Change your display name"
-        >
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
-            {(name ?? "?").slice(0, 1).toUpperCase()}
-          </span>
-          {name ?? "Set name"}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <PushToggle createdBy={name} />
+          <button
+            onClick={() => setChangingName(true)}
+            className="flex min-h-11 items-center gap-1.5 rounded-full bg-white px-3.5 text-sm font-medium text-neutral-700 active:bg-neutral-100"
+            aria-label="Change your display name"
+          >
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700">
+              {(name ?? "?").slice(0, 1).toUpperCase()}
+            </span>
+            {name ?? "Set name"}
+          </button>
+        </div>
       </header>
+
+      <DueBanner tasks={board.tasks} />
 
       <div className="sticky top-0 z-10 -mx-4 mt-3 bg-neutral-100/95 px-4 py-1 backdrop-blur">
         <LabelTabs

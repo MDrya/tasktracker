@@ -168,9 +168,38 @@ are left alone.
   anyone with the URL can edit the board — that is the product intent for v1.
   The upgrade path is Supabase Auth + user-scoped RLS policies.
 
+## Due-date warnings
+
+Two layers, both driven by the same `summarizeDue` helper in
+`lib/urgency.ts` so they can never disagree about what counts as urgent:
+
+- **In-app banner** — a bar at the top of the board counting orders that
+  are overdue, due today, or due within the next `SOON_DAYS` (2) days.
+  Red when something is overdue or due today, amber when it's only
+  upcoming. Dismissing hides it for the rest of the day; it returns
+  tomorrow if anything is still due.
+- **Daily push notification** — opt in per device with the bell button in
+  the header. `vercel.json` runs `/api/cron/due-digest` daily and sends
+  one summary notification per subscribed device (not one per order).
+
+Finished orders are excluded from both — an order counts as finished when
+every one of its subtasks is checked off.
+
+The cron schedule (`0 1 * * *`) is **UTC**, which is 08:00 WIB. Adjust it
+if your team is in another timezone. On Vercel's Hobby plan crons fire once
+a day at an unspecified minute within the scheduled hour.
+
+Push requires a secure context: it works on the deployed `https://` URL and
+on `http://localhost`, but not over plain HTTP elsewhere. iPhones only allow
+web push once the site is added to the Home Screen.
+
+Notification setup lives in steps 3–4 of the Setup section
+(`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`,
+`CRON_SECRET`).
+
 ## Out of scope for v1 (planned upgrade path)
 
 - Real authentication (Supabase Auth) — the data-access layer is already
   isolated so this won't require a rewrite
-- Due-date notifications/reminders
+- Per-order notifications (the digest is one summary per day)
 - Manual drag-and-drop ordering
