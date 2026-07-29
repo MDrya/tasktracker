@@ -23,9 +23,17 @@ export default function PushToggle({
 }: {
   createdBy: string | null;
 }) {
-  const { supported, needsInstall, subscribed, busy, subscribe, unsubscribe } =
-    usePushSubscription(createdBy);
+  const {
+    supported,
+    needsInstall,
+    subscribed,
+    permissionDenied,
+    busy,
+    subscribe,
+    unsubscribe,
+  } = usePushSubscription(createdBy);
   const [showHelp, setShowHelp] = useState(false);
+  const [showDenied, setShowDenied] = useState(false);
 
   if (needsInstall) {
     return (
@@ -82,18 +90,64 @@ export default function PushToggle({
   if (!supported) return null;
 
   return (
-    <button
-      onClick={subscribed ? unsubscribe : subscribe}
-      disabled={busy}
-      aria-label={
-        subscribed ? "Turn off due-date alerts" : "Turn on due-date alerts"
-      }
-      title={subscribed ? "Due-date alerts on" : "Get due-date alerts"}
-      className={`flex min-h-11 min-w-11 items-center justify-center rounded-full disabled:opacity-50 ${
-        subscribed ? "bg-indigo-100 text-indigo-600" : "bg-white text-neutral-400"
-      }`}
-    >
-      <BellIcon />
-    </button>
+    <>
+      <button
+        onClick={
+          permissionDenied
+            ? () => setShowDenied(true)
+            : subscribed
+              ? unsubscribe
+              : subscribe
+        }
+        disabled={busy}
+        aria-label={
+          permissionDenied
+            ? "Notifications are blocked — how to re-enable"
+            : subscribed
+              ? "Turn off due-date alerts"
+              : "Turn on due-date alerts"
+        }
+        title={subscribed ? "Due-date alerts on" : "Get due-date alerts"}
+        className={`flex min-h-11 min-w-11 items-center justify-center rounded-full disabled:opacity-50 ${
+          subscribed
+            ? "bg-indigo-100 text-indigo-600"
+            : "bg-white text-neutral-400"
+        }`}
+      >
+        <BellIcon />
+      </button>
+
+      {showDenied && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center"
+          onClick={() => setShowDenied(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold">Notifications are blocked</h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              This device refused notifications earlier, and the phone won’t ask
+              again. Turn them back on in your device settings:
+            </p>
+            <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-sm text-neutral-700">
+              <li>Open Settings → Notifications</li>
+              <li>Find TaskTracker in the list</li>
+              <li>Turn on “Allow Notifications”</li>
+              <li>Come back here and tap the bell</li>
+            </ol>
+            <button
+              onClick={() => setShowDenied(false)}
+              className="mt-4 min-h-11 w-full rounded-xl bg-neutral-100 px-4 text-sm font-medium text-neutral-700 active:bg-neutral-200"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
