@@ -30,10 +30,11 @@
 // only in the Apps Script editor and your environment variables.
 var SHARED_SECRET = 'PASTE_THE_SAME_SECRET_HERE';
 
-// Order columns A–D repeat for every subtask of the same order, so they
-// get merged into one block per order.
-var ORDER_COLUMN_COUNT = 4;
-var DONE_COLUMN = 7;
+// The column layout arrives with each request, so adding or reordering
+// columns in the app never requires redeploying this script. These are
+// only fallbacks for an older app version that doesn't send a layout.
+var DEFAULT_ORDER_COLUMN_COUNT = 5;
+var DEFAULT_DONE_COLUMN = 8;
 
 var DONE_BACKGROUND = '#d9ead3'; // light green
 var NOT_DONE_BACKGROUND = '#f4cccc'; // light red
@@ -51,6 +52,9 @@ function doPost(e) {
     var headers = body.headers;
     var rows = body.rows || [];
     var groups = body.groups || [];
+    var orderColumnCount = body.orderColumns || DEFAULT_ORDER_COLUMN_COUNT;
+    var doneColumn = body.doneColumn || DEFAULT_DONE_COLUMN;
+    var formats = body.formats || [];
 
     // Merges and fills survive clearContents(), so a shrinking board would
     // otherwise leave stale merged blocks and colour behind. Break every
@@ -59,6 +63,18 @@ function doPost(e) {
       .getRange(1, 1, sheet.getMaxRows(), sheet.getMaxColumns())
       .breakApart();
     sheet.clear();
+
+    // Number formats are applied BEFORE the values. Sheets keeps a
+    // column's previous format when the data underneath it changes, so a
+    // column that once held dates renders a plain number as a date — a
+    // total of 250 shows as 1900-09-06. Applying formats first also stops
+    // setValues parsing a title like "1/2" into a date; setting the format
+    // afterwards would be too late and would expose the raw serial number.
+    if (rows.length > 0) {
+      for (var c = 0; c < formats.length && c < headers.length; c++) {
+        sheet.getRange(2, c + 1, rows.length, 1).setNumberFormat(formats[c]);
+      }
+    }
 
     var values = [headers].concat(rows);
     sheet.getRange(1, 1, values.length, headers.length).setValues(values);
@@ -70,7 +86,7 @@ function doPost(e) {
       // (blank rows included) so no stale fill can linger.
       var backgrounds = [];
       for (var r = 0; r < rows.length; r++) {
-        var value = rows[r][DONE_COLUMN - 1];
+        var value = rows[r][doneColumn - 1];
         backgrounds.push([
           value === 'Yes'
             ? DONE_BACKGROUND
@@ -79,7 +95,7 @@ function doPost(e) {
               : NO_BACKGROUND,
         ]);
       }
-      sheet.getRange(2, DONE_COLUMN, rows.length, 1).setBackgrounds(backgrounds);
+      sheet.getRange(2, doneColumn, rows.length, 1).setBackgrounds(backgrounds);
 
       // Merge the order columns down each order's block. Groups arrive
       // from the app, which knows which rows are genuinely the same order
@@ -88,13 +104,13 @@ function doPost(e) {
         var group = groups[g];
         if (group.count < 2) continue;
         sheet
-          .getRange(2 + group.start, 1, group.count, ORDER_COLUMN_COUNT)
+          .getRange(2 + group.start, 1, group.count, orderColumnCount)
           .mergeVertically();
       }
 
       // Centre the merged order cells against their subtask rows.
       sheet
-        .getRange(2, 1, rows.length, ORDER_COLUMN_COUNT)
+        .getRange(2, 1, rows.length, orderColumnCount)
         .setVerticalAlignment('middle');
     }
 

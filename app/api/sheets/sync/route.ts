@@ -6,12 +6,45 @@ export const dynamic = "force-dynamic";
 
 const HEADERS = [
   "Order",
+  "Order labels",
   "Order total",
   "Order due",
   "Order status",
   "Subtask",
   "Subtask due",
   "Subtask done",
+];
+
+// Columns that describe the order itself, so they repeat for each of its
+// subtasks and get merged into one block. The rest describe the subtask.
+const ORDER_COLUMNS = 5;
+// 1-based, the "Subtask done" column that gets the green/red fill.
+const DONE_COLUMN = HEADERS.length;
+
+/**
+ * Number format per column, applied on every sync.
+ *
+ * Sheets keeps a column's old number format when the data underneath it
+ * changes, so a column that once held dates will render a plain number
+ * as a date — a total of 250 becomes 1900-09-06. Stating the format
+ * explicitly every time makes the sheet independent of whatever the
+ * column used to contain.
+ *
+ * Text columns are pinned to "@" so free-typed titles like "1/2" or
+ * "10-12" stay as written instead of being parsed into dates.
+ */
+const TEXT = "@";
+const DATE = "yyyy-mm-dd";
+const NUMBER = "#,##0.##";
+const COLUMN_FORMATS = [
+  TEXT, // Order
+  TEXT, // Order labels
+  NUMBER, // Order total
+  DATE, // Order due
+  TEXT, // Order status
+  TEXT, // Subtask
+  DATE, // Subtask due
+  TEXT, // Subtask done
 ];
 
 /**
@@ -46,15 +79,15 @@ export async function POST() {
   for (const task of tasks) {
     const start = rows.length;
     const status = isTaskComplete(task) ? "Done" : "In progress";
+    const labels = task.labels.map((l) => l.name).join(", ");
+    const order = [task.title, labels, task.total, task.due_date, status];
+
     if (task.subtasks.length === 0) {
-      rows.push([task.title, task.total, task.due_date, status, "", "", ""]);
+      rows.push([...order, "", "", ""]);
     } else {
       for (const st of task.subtasks) {
         rows.push([
-          task.title,
-          task.total,
-          task.due_date,
-          status,
+          ...order,
           st.title,
           st.due_date,
           st.done ? "Yes" : "No",
@@ -64,7 +97,17 @@ export async function POST() {
     groups.push({ start, count: rows.length - start });
   }
 
-  const payload = JSON.stringify({ secret, headers: HEADERS, rows, groups });
+  const payload = JSON.stringify({
+    secret,
+    headers: HEADERS,
+    rows,
+    groups,
+    // The sheet layout travels with the data, so adding or reordering
+    // columns here never needs the Apps Script redeployed to match.
+    orderColumns: ORDER_COLUMNS,
+    doneColumn: DONE_COLUMN,
+    formats: COLUMN_FORMATS,
+  });
 
   // Apps Script answers a POST with a 302 to a one-shot script.google-
   // usercontent.com URL, and that hop fails outright maybe 1 call in 8 —
