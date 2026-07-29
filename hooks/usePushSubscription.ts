@@ -43,6 +43,7 @@ export function usePushSubscription(createdBy: string | null) {
   const [supported, setSupported] = useState(false);
   const [needsInstall, setNeedsInstall] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -50,6 +51,11 @@ export function usePushSubscription(createdBy: string | null) {
     const hasApi = "serviceWorker" in navigator && "PushManager" in window;
     setSupported(hasApi && hasKey);
     setNeedsInstall(!hasApi && hasKey && isIOS() && !isStandalone());
+    // A refusal from an earlier visit persists, so reflect it on load
+    // rather than waiting for a tap that can no longer prompt.
+    if ("Notification" in window) {
+      setPermissionDenied(Notification.permission === "denied");
+    }
   }, []);
 
   useEffect(() => {
@@ -64,7 +70,14 @@ export function usePushSubscription(createdBy: string | null) {
     setBusy(true);
     try {
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") return;
+      if (permission !== "granted") {
+        // iOS only ever shows the prompt once. After a refusal the request
+        // resolves "denied" immediately and for good, so without saying so
+        // the bell would look dead every time it was tapped.
+        setPermissionDenied(permission === "denied");
+        return;
+      }
+      setPermissionDenied(false);
       const reg = await navigator.serviceWorker.register("/sw.js");
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
@@ -102,5 +115,13 @@ export function usePushSubscription(createdBy: string | null) {
     }
   }, []);
 
-  return { supported, needsInstall, subscribed, busy, subscribe, unsubscribe };
+  return {
+    supported,
+    needsInstall,
+    subscribed,
+    permissionDenied,
+    busy,
+    subscribe,
+    unsubscribe,
+  };
 }
