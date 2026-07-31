@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { stageLoads } from "@/lib/capacity";
 import { fetchBoard } from "@/lib/data";
 import { isTaskComplete, sortByUrgency } from "@/lib/urgency";
 
@@ -46,6 +47,23 @@ const COLUMN_FORMATS = [
   DATE, // Subtask due
   TEXT, // Subtask done
 ];
+
+/**
+ * Outstanding workload per production stage, written to its own tab.
+ *
+ * It lives on a separate sheet because the data tab is wiped and rewritten
+ * on every sync — anything sharing that tab would be destroyed.
+ */
+const SUMMARY_SHEET = "Kapasitas";
+const SUMMARY_HEADERS = [
+  "Stage",
+  "Kaos left",
+  "Orders",
+  "Overdue",
+  "Soonest due",
+  "Missing kaos count",
+];
+const SUMMARY_FORMATS = [TEXT, NUMBER, NUMBER, NUMBER, DATE, NUMBER];
 
 /**
  * Pushes the whole board to a Google Sheet via a Google Apps Script web
@@ -97,6 +115,15 @@ export async function POST() {
     groups.push({ start, count: rows.length - start });
   }
 
+  const summaryRows = stageLoads(tasks).map((load) => [
+    load.label.name,
+    load.kaos,
+    load.orders,
+    load.overdue,
+    load.soonestDue,
+    load.missingCount,
+  ]);
+
   const payload = JSON.stringify({
     secret,
     headers: HEADERS,
@@ -107,6 +134,12 @@ export async function POST() {
     orderColumns: ORDER_COLUMNS,
     doneColumn: DONE_COLUMN,
     formats: COLUMN_FORMATS,
+    summary: {
+      sheetName: SUMMARY_SHEET,
+      headers: SUMMARY_HEADERS,
+      rows: summaryRows,
+      formats: SUMMARY_FORMATS,
+    },
   });
 
   // Apps Script answers a POST with a 302 to a one-shot script.google-

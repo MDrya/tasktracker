@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import CapacityOverview from "@/components/CapacityOverview";
 import DueBanner from "@/components/DueBanner";
 import EntityForm from "@/components/EntityForm";
+import StageSummary from "@/components/StageSummary";
 import LabelTabs from "@/components/LabelTabs";
 import NamePicker from "@/components/NamePicker";
 import PushToggle from "@/components/PushToggle";
@@ -10,6 +12,7 @@ import TaskCard from "@/components/TaskCard";
 import Toast from "@/components/Toast";
 import { useBoard } from "@/hooks/useBoard";
 import { useDisplayName } from "@/hooks/useDisplayName";
+import { stageLoad, stageLoads, stageNeedsWork } from "@/lib/capacity";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import type { Label, Task } from "@/lib/types";
 import { sortByUrgency } from "@/lib/urgency";
@@ -52,6 +55,17 @@ export default function Home() {
       : board.tasks;
     return sortByUrgency(filtered);
   }, [board.tasks, activeId]);
+
+  const loads = useMemo(() => stageLoads(board.tasks), [board.tasks]);
+
+  // A stage card only makes sense for a label that sits on subtasks; a
+  // label used purely to tag whole orders has no workload to report.
+  const activeStage = useMemo(() => {
+    const label = labels.find((l) => l.id === activeId);
+    if (!label) return null;
+    const load = stageLoad(board.tasks, label);
+    return load.orders > 0 ? load : null;
+  }, [labels, activeId, board.tasks]);
 
   const toggleExpanded = (id: string) =>
     setExpandedIds((prev) => {
@@ -108,6 +122,12 @@ export default function Home() {
           onDelete={board.removeLabel}
         />
       </div>
+
+      {activeStage ? (
+        <StageSummary load={activeStage} />
+      ) : activeId === null ? (
+        <CapacityOverview loads={loads} onSelectStage={setActiveLabelId} />
+      ) : null}
 
       {/* Add task */}
       <div className="mt-3">
@@ -173,6 +193,10 @@ export default function Home() {
               key={task.id}
               task={task}
               expanded={expandedIds.has(task.id)}
+              // In a stage tab, orders that already cleared this stage stay
+              // visible for context but recede, so what's left to do reads
+              // at a glance without hiding the finished work.
+              dimmed={activeId !== null && !stageNeedsWork(task, activeId)}
               onToggleExpand={() => toggleExpanded(task.id)}
               onEditTask={(patch, labelNames) =>
                 board.editTask(task.id, patch, labelNames)
