@@ -13,6 +13,7 @@ import SubtaskRow from "./SubtaskRow";
 export default function TaskCard({
   task,
   expanded,
+  dimmed = false,
   onToggleExpand,
   onEditTask,
   onDeleteTask,
@@ -23,6 +24,9 @@ export default function TaskCard({
 }: {
   task: Task;
   expanded: boolean;
+  /** Recede this card — used for orders that already cleared the
+   *  stage whose tab is open. */
+  dimmed?: boolean;
   onToggleExpand: () => void;
   onEditTask: (patch: TaskPatch, labelNames: string[]) => void;
   onDeleteTask: () => void;
@@ -48,7 +52,9 @@ export default function TaskCard({
   const effective = effectiveDueDate(task);
 
   return (
-    <li className="rounded-2xl bg-white p-4">
+    <li
+      className={`rounded-2xl bg-white p-4 ${dimmed && !expanded ? "opacity-50" : ""}`}
+    >
       {editing ? (
         <EntityForm
           initialTitle={task.title}

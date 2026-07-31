@@ -114,10 +114,53 @@ function doPost(e) {
         .setVerticalAlignment('middle');
     }
 
-    return json({ ok: true, rows: rows.length, merged: groups.length });
+    var summaryRows = writeSummary(body.summary);
+
+    return json({
+      ok: true,
+      rows: rows.length,
+      merged: groups.length,
+      summaryRows: summaryRows,
+    });
   } catch (err) {
     return json({ ok: false, error: String(err) });
   }
+}
+
+/**
+ * Write the workload summary to its own tab, created on first run.
+ *
+ * It deliberately does not live on the data tab, which is wiped and
+ * rewritten every sync. Everything about it — tab name, headers, formats
+ * — arrives in the payload, so changing the summary later is an app-side
+ * change and needs no redeploy of this script.
+ */
+function writeSummary(summary) {
+  if (!summary || !summary.sheetName) return 0;
+
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = spreadsheet.getSheetByName(summary.sheetName);
+  if (!sheet) sheet = spreadsheet.insertSheet(summary.sheetName);
+
+  var headers = summary.headers || [];
+  var rows = summary.rows || [];
+  var formats = summary.formats || [];
+  if (headers.length === 0) return 0;
+
+  sheet.clear();
+
+  if (rows.length > 0) {
+    for (var c = 0; c < formats.length && c < headers.length; c++) {
+      sheet.getRange(2, c + 1, rows.length, 1).setNumberFormat(formats[c]);
+    }
+  }
+
+  var values = [headers].concat(rows);
+  sheet.getRange(1, 1, values.length, headers.length).setValues(values);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+
+  return rows.length;
 }
 
 function json(obj) {
