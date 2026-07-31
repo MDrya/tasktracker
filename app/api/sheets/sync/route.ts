@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { stageLoads } from "@/lib/capacity";
+import { categoryLoads, openWorkload, stageLoads } from "@/lib/capacity";
 import { fetchBoard } from "@/lib/data";
 import { isTaskComplete, sortByUrgency } from "@/lib/urgency";
 
@@ -56,14 +56,15 @@ const COLUMN_FORMATS = [
  */
 const SUMMARY_SHEET = "Kapasitas";
 const SUMMARY_HEADERS = [
-  "Stage",
+  "Kind",
+  "Name",
   "Kaos left",
   "Orders",
   "Overdue",
   "Soonest due",
   "Missing kaos count",
 ];
-const SUMMARY_FORMATS = [TEXT, NUMBER, NUMBER, NUMBER, DATE, NUMBER];
+const SUMMARY_FORMATS = [TEXT, TEXT, NUMBER, NUMBER, NUMBER, DATE, NUMBER];
 
 /**
  * Pushes the whole board to a Google Sheet via a Google Apps Script web
@@ -115,14 +116,32 @@ export async function POST() {
     groups.push({ start, count: rows.length - start });
   }
 
-  const summaryRows = stageLoads(tasks).map((load) => [
-    load.label.name,
-    load.kaos,
-    load.orders,
-    load.overdue,
-    load.soonestDue,
-    load.missingCount,
-  ]);
+  // Stage rows count work remaining at a step; product rows count orders
+  // of a type. They are kept in one table but labelled, because the two
+  // kinds must never be added together — an order appears in several
+  // stages at once, so summing them would count the same shirts twice.
+  const open = openWorkload(tasks);
+  const summaryRows: (string | number | null)[][] = [
+    ["Total", "Kaos in workshop", open.kaos, open.orders, "", "", open.missingCount],
+    ...stageLoads(tasks).map((load) => [
+      "Stage",
+      load.label.name,
+      load.kaos,
+      load.orders,
+      load.overdue,
+      load.soonestDue,
+      load.missingCount,
+    ]),
+    ...categoryLoads(tasks).map((load) => [
+      "Product",
+      load.label.name,
+      load.openKaos,
+      load.openOrders,
+      load.overdue,
+      load.soonestDue,
+      load.missingCount,
+    ]),
+  ];
 
   const payload = JSON.stringify({
     secret,

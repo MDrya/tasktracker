@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import CapacityOverview from "@/components/CapacityOverview";
+import CategorySummary from "@/components/CategorySummary";
 import DueBanner from "@/components/DueBanner";
 import EntityForm from "@/components/EntityForm";
 import StageSummary from "@/components/StageSummary";
@@ -12,10 +13,17 @@ import TaskCard from "@/components/TaskCard";
 import Toast from "@/components/Toast";
 import { useBoard } from "@/hooks/useBoard";
 import { useDisplayName } from "@/hooks/useDisplayName";
-import { stageLoad, stageLoads, stageNeedsWork } from "@/lib/capacity";
+import {
+  categoryLoad,
+  categoryLoads,
+  openWorkload,
+  stageLoad,
+  stageLoads,
+  stageNeedsWork,
+} from "@/lib/capacity";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import type { Label, Task } from "@/lib/types";
-import { sortByUrgency } from "@/lib/urgency";
+import { isTaskComplete, sortByUrgency } from "@/lib/urgency";
 
 /** All labels currently in use, from both tasks and subtasks, unique by id. */
 function labelsInUse(tasks: Task[]): Label[] {
@@ -57,15 +65,28 @@ export default function Home() {
   }, [board.tasks, activeId]);
 
   const loads = useMemo(() => stageLoads(board.tasks), [board.tasks]);
+  const categories = useMemo(() => categoryLoads(board.tasks), [board.tasks]);
+  const open = useMemo(() => openWorkload(board.tasks), [board.tasks]);
 
-  // A stage card only makes sense for a label that sits on subtasks; a
-  // label used purely to tag whole orders has no workload to report.
+  // A label describes either a production step (it sits on subtasks) or a
+  // product type (it sits on orders), and the useful summary differs. A
+  // label used both ways gets both cards rather than one being guessed at.
+  const activeLabel = useMemo(
+    () => labels.find((l) => l.id === activeId) ?? null,
+    [labels, activeId]
+  );
+
   const activeStage = useMemo(() => {
-    const label = labels.find((l) => l.id === activeId);
-    if (!label) return null;
-    const load = stageLoad(board.tasks, label);
+    if (!activeLabel) return null;
+    const load = stageLoad(board.tasks, activeLabel);
     return load.orders > 0 ? load : null;
-  }, [labels, activeId, board.tasks]);
+  }, [activeLabel, board.tasks]);
+
+  const activeCategory = useMemo(() => {
+    if (!activeLabel) return null;
+    const load = categoryLoad(board.tasks, activeLabel);
+    return load.openOrders > 0 || load.doneOrders > 0 ? load : null;
+  }, [activeLabel, board.tasks]);
 
   const toggleExpanded = (id: string) =>
     setExpandedIds((prev) => {
@@ -123,11 +144,19 @@ export default function Home() {
         />
       </div>
 
-      {activeStage ? (
-        <StageSummary load={activeStage} />
-      ) : activeId === null ? (
-        <CapacityOverview loads={loads} onSelectStage={setActiveLabelId} />
-      ) : null}
+      {activeId === null ? (
+        <CapacityOverview
+          open={open}
+          stages={loads}
+          categories={categories}
+          onSelectLabel={setActiveLabelId}
+        />
+      ) : (
+        <>
+          {activeStage && <StageSummary load={activeStage} />}
+          {activeCategory && <CategorySummary load={activeCategory} />}
+        </>
+      )}
 
       {/* Add task */}
       <div className="mt-3">
@@ -193,10 +222,18 @@ export default function Home() {
               key={task.id}
               task={task}
               expanded={expandedIds.has(task.id)}
-              // In a stage tab, orders that already cleared this stage stay
-              // visible for context but recede, so what's left to do reads
-              // at a glance without hiding the finished work.
-              dimmed={activeId !== null && !stageNeedsWork(task, activeId)}
+              // Finished work stays visible but recedes. What counts as
+              // finished depends on the tab: on a stage, whether that step
+              // is cleared; on a product, whether the whole order is done.
+              // Using the stage rule on a product tab would dim every card,
+              // since a product label never sits on a subtask.
+              dimmed={
+                activeStage
+                  ? !stageNeedsWork(task, activeStage.label.id)
+                  : activeCategory
+                    ? isTaskComplete(task)
+                    : false
+              }
               onToggleExpand={() => toggleExpanded(task.id)}
               onEditTask={(patch, labelNames) =>
                 board.editTask(task.id, patch, labelNames)
