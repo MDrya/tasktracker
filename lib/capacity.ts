@@ -1,5 +1,5 @@
 import type { Label, Task } from "./types";
-import { daysUntil, effectiveDueDate } from "./urgency";
+import { daysUntil, effectiveDueDate, isTaskComplete } from "./urgency";
 
 /**
  * Production-stage workload, measured in pieces rather than orders.
@@ -92,4 +92,111 @@ export function stageLoads(tasks: Task[]): StageLoad[] {
     .map((label) => stageLoad(tasks, label))
     .filter((load) => load.orders > 0)
     .sort((a, b) => b.kaos - a.kaos || a.label.name.localeCompare(b.label.name));
+}
+
+/**
+ * Shirts actually sitting in the workshop, each order counted once.
+ *
+ * Stage totals deliberately cannot be added together: one order passes
+ * through several stages, so summing them counts the same shirts twice.
+ * 645 kaos needing both desain and jahit is 645 shirts of work in the
+ * building, not 1290.
+ */
+export interface OpenWorkload {
+  orders: number;
+  kaos: number;
+  missingCount: number;
+}
+
+export function openWorkload(tasks: Task[]): OpenWorkload {
+  let orders = 0;
+  let kaos = 0;
+  let missingCount = 0;
+
+  for (const task of tasks) {
+    if (isTaskComplete(task)) continue;
+    orders++;
+    if (task.total === null) missingCount++;
+    else kaos += task.total;
+  }
+
+  return { orders, kaos, missingCount };
+}
+
+/**
+ * A product type — Kaos, Jaket — rather than a step in production.
+ *
+ * These labels sit on the order itself, so the useful split is what is
+ * still to make versus what is finished, not what work remains at a stage.
+ */
+export interface CategoryLoad {
+  label: Label;
+  openOrders: number;
+  openKaos: number;
+  doneOrders: number;
+  doneKaos: number;
+  missingCount: number;
+  overdue: number;
+  soonestDue: string | null;
+}
+
+/** Labels carried by orders themselves. */
+export function categoryLabels(tasks: Task[]): Label[] {
+  const byId = new Map<string, Label>();
+  for (const task of tasks) {
+    for (const label of task.labels) byId.set(label.id, label);
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function categoryLoad(tasks: Task[], label: Label): CategoryLoad {
+  let openOrders = 0;
+  let openKaos = 0;
+  let doneOrders = 0;
+  let doneKaos = 0;
+  let missingCount = 0;
+  let overdue = 0;
+  let soonestDue: string | null = null;
+
+  for (const task of tasks) {
+    if (!task.labels.some((l) => l.id === label.id)) continue;
+
+    if (isTaskComplete(task)) {
+      doneOrders++;
+      if (task.total !== null) doneKaos += task.total;
+      continue;
+    }
+
+    openOrders++;
+    if (task.total === null) missingCount++;
+    else openKaos += task.total;
+
+    const due = effectiveDueDate(task);
+    if (due) {
+      if (daysUntil(due) < 0) overdue++;
+      if (soonestDue === null || due < soonestDue) soonestDue = due;
+    }
+  }
+
+  return {
+    label,
+    openOrders,
+    openKaos,
+    doneOrders,
+    doneKaos,
+    missingCount,
+    overdue,
+    soonestDue,
+  };
+}
+
+/** Every product type that still has orders open, biggest first. */
+export function categoryLoads(tasks: Task[]): CategoryLoad[] {
+  return categoryLabels(tasks)
+    .map((label) => categoryLoad(tasks, label))
+    .filter((load) => load.openOrders > 0 || load.doneOrders > 0)
+    .sort(
+      (a, b) =>
+        b.openKaos - a.openKaos || a.label.name.localeCompare(b.label.name)
+    );
 }
