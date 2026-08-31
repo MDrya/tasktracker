@@ -11,8 +11,8 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "TaskTracker",
-    short_name: "TaskTracker",
+    name: "KonveksiTracker",
+    short_name: "KonveksiTracker",
     description: "Shared team order tracker",
     start_url: "/",
     display: "standalone",

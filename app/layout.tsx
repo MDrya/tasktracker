@@ -2,14 +2,14 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TaskTracker",
+  title: "KonveksiTracker",
   description: "Shared team task tracker",
   // iOS ignores the manifest's icons for the Home Screen and reads
   // apple-touch-icon instead; without it the shortcut gets a blurry
   // screenshot of the page.
   appleWebApp: {
     capable: true,
-    title: "TaskTracker",
+    title: "KonveksiTracker",
     statusBarStyle: "default",
   },
   icons: {

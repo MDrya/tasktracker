@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   }
 
   const payload = JSON.stringify({
-    title: "TaskTracker",
+    title: "KonveksiTracker",
     body: describeDue(summary),
     url: "/",
   });

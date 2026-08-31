@@ -67,7 +67,7 @@ export default function PushToggle({
               <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-sm text-neutral-700">
                 <li>Tap the Share button at the bottom of Safari</li>
                 <li>Choose “Add to Home Screen”, then “Add”</li>
-                <li>Open TaskTracker from the new Home Screen icon</li>
+                <li>Open KonveksiTracker from the new Home Screen icon</li>
                 <li>Tap the bell here and allow notifications</li>
               </ol>
               <p className="mt-3 text-xs text-neutral-400">
@@ -135,7 +135,7 @@ export default function PushToggle({
             </p>
             <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-sm text-neutral-700">
               <li>Open Settings → Notifications</li>
-              <li>Find TaskTracker in the list</li>
+              <li>Find KonveksiTracker in the list</li>
               <li>Turn on “Allow Notifications”</li>
               <li>Come back here and tap the bell</li>
             </ol>
