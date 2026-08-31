@@ -22,6 +22,7 @@ export interface Task {
   id: string;
   title: string;
   due_date: string | null; // ISO date "YYYY-MM-DD"
+  start_date: string | null;
   total: number | null; // order total; main tasks only — subtasks have none
   created_by: string | null;
   created_at: string;
@@ -34,6 +35,7 @@ export interface Task {
 export interface TaskPatch {
   title?: string;
   due_date?: string | null;
+  start_date?: string | null;
   total?: number | null;
 }
 

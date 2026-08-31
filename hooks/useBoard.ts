@@ -112,12 +112,14 @@ export function useBoard(enabled: boolean) {
       dueDate: string | null,
       labelNames: string[],
       createdBy: string | null,
-      total: number | null = null
+      total: number | null = null,
+      startDate: string | null = null
     ) => {
       const now = new Date().toISOString();
       const task: Task = {
         id: crypto.randomUUID(),
         title,
+        start_date: startDate,
         due_date: dueDate,
         total,
         created_by: createdBy,
@@ -130,7 +132,7 @@ export function useBoard(enabled: boolean) {
         (prev) => [...prev, task],
         () =>
           db.createTask(
-            { id: task.id, title, due_date: dueDate, total, created_by: createdBy },
+            { id: task.id, title, start_date: startDate, due_date: dueDate, total, created_by: createdBy },
             labelNames
           ),
         "Couldn't add the task."
