@@ -115,7 +115,7 @@ export default function Home() {
     return (
       <main className="mx-auto max-w-lg px-4 py-16">
         <div className="rounded-2xl bg-white p-6">
-          <h1 className="text-lg font-semibold">TaskTracker isn’t configured yet</h1>
+          <h1 className="text-lg font-semibold">KonveksiTracker isn’t configured yet</h1>
           <p className="mt-2 text-sm text-neutral-600">
             Copy <code className="rounded bg-neutral-100 px-1">.env.local.example</code> to{" "}
             <code className="rounded bg-neutral-100 px-1">.env.local</code> and fill in your
@@ -131,7 +131,7 @@ export default function Home() {
     <main className="mx-auto max-w-lg px-4 pb-24 pt-4">
       {/* Header: app name + persistent identity chip */}
       <header className="flex items-center justify-between gap-2">
-        <h1 className="text-xl font-bold tracking-tight">TaskTracker</h1>
+        <h1 className="text-xl font-bold tracking-tight">KonveksiTracker</h1>
         <div className="flex items-center gap-1.5">
           <PushToggle createdBy={name} />
           <button

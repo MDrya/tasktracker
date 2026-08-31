@@ -3,7 +3,7 @@
 // job is receiving push events and showing a notification.
 
 self.addEventListener("push", (event) => {
-  let data = { title: "TaskTracker", body: "You have orders due soon." };
+  let data = { title: "KonveksiTracker", body: "You have orders due soon." };
   if (event.data) {
     try {
       data = { ...data, ...event.data.json() };
