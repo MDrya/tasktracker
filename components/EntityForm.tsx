@@ -4,6 +4,7 @@ import { useState } from "react";
 
 export interface EntityFormValues {
   title: string;
+  startDate?: string | null;
   dueDate: string | null;
   labelNames: string[];
   total?: number | null;
@@ -20,6 +21,8 @@ export default function EntityForm({
   initialLabels = [],
   initialTotal = null,
   showTotal = false,
+  initialStartDate = null,
+  showStartDate = false,
   submitLabel,
   placeholder,
   autoFocus = false,
@@ -31,6 +34,8 @@ export default function EntityForm({
   initialLabels?: string[];
   initialTotal?: number | null;
   showTotal?: boolean;
+  initialStartDate?: string | null;
+  showStartDate?: boolean;
   submitLabel: string;
   placeholder: string;
   autoFocus?: boolean;
@@ -40,6 +45,7 @@ export default function EntityForm({
   const [title, setTitle] = useState(initialTitle);
   const [dueDate, setDueDate] = useState(initialDueDate ?? "");
   const [labels, setLabels] = useState(initialLabels.join(", "));
+  const [startDate, setStartDate] = useState(initialStartDate ?? "");
   const [total, setTotal] = useState(
     initialTotal === null ? "" : String(initialTotal)
   );
@@ -50,6 +56,7 @@ export default function EntityForm({
     if (!trimmed) return;
     onSubmit({
       title: trimmed,
+      ...(showStartDate ? { startDate: startDate || null } : {}),
       dueDate: dueDate || null,
       labelNames: labels.split(",").map((s) => s.trim()).filter(Boolean),
       ...(showTotal ? { total: total.trim() === "" ? null : Number(total) } : {}),
@@ -57,6 +64,7 @@ export default function EntityForm({
     // Reset only in "add" mode (edit forms are closed by the parent).
     if (!onCancel) {
       setTitle("");
+      setStartDate("");
       setDueDate("");
       setLabels("");
       setTotal("");
@@ -76,6 +84,15 @@ export default function EntityForm({
         className={inputClass}
       />
       <div className="flex gap-2">
+        {showStartDate && (
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            aria-label="Start date"
+            className={`${inputClass} min-w-0 flex-1`}
+          />
+        )}
         <input
           type="date"
           value={dueDate}
@@ -83,14 +100,25 @@ export default function EntityForm({
           aria-label="Due date"
           className={`${inputClass} min-w-0 flex-1`}
         />
+        {!showStartDate && (
+          <input
+            value={labels}
+            onChange={(e) => setLabels(e.target.value)}
+            placeholder="labels, comma, separated"
+            aria-label="Labels"
+            className={`${inputClass} min-w-0 flex-[1.4]`}
+          />
+        )}
+      </div>
+      {showStartDate && (
         <input
           value={labels}
           onChange={(e) => setLabels(e.target.value)}
           placeholder="labels, comma, separated"
           aria-label="Labels"
-          className={`${inputClass} min-w-0 flex-[1.4]`}
+          className={inputClass}
         />
-      </div>
+      )}
       {showTotal && (
         <input
           type="number"

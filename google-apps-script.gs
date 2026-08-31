@@ -33,8 +33,8 @@ var SHARED_SECRET = 'PASTE_THE_SAME_SECRET_HERE';
 // The column layout arrives with each request, so adding or reordering
 // columns in the app never requires redeploying this script. These are
 // only fallbacks for an older app version that doesn't send a layout.
-var DEFAULT_ORDER_COLUMN_COUNT = 5;
-var DEFAULT_DONE_COLUMN = 8;
+var DEFAULT_ORDER_COLUMN_COUNT = 6;
+var DEFAULT_DONE_COLUMN = 9;
 
 var DONE_BACKGROUND = '#d9ead3'; // light green
 var NOT_DONE_BACKGROUND = '#f4cccc'; // light red

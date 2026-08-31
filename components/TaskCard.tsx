@@ -58,15 +58,17 @@ export default function TaskCard({
       {editing ? (
         <EntityForm
           initialTitle={task.title}
+          initialStartDate={task.start_date}
           initialDueDate={task.due_date}
           initialLabels={task.labels.map((l) => l.name)}
           initialTotal={task.total}
           showTotal
+          showStartDate
           submitLabel="Save"
           placeholder="Task title"
           autoFocus
-          onSubmit={({ title, dueDate, labelNames, total }) => {
-            onEditTask({ title, due_date: dueDate, total }, labelNames);
+          onSubmit={({ title, startDate, dueDate, labelNames, total }) => {
+            onEditTask({ title, start_date: startDate, due_date: dueDate, total }, labelNames);
             setEditing(false);
           }}
           onCancel={() => setEditing(false)}

@@ -9,6 +9,7 @@ const HEADERS = [
   "Order",
   "Order labels",
   "Order total",
+  "Order start",
   "Order due",
   "Order status",
   "Subtask",
@@ -18,7 +19,7 @@ const HEADERS = [
 
 // Columns that describe the order itself, so they repeat for each of its
 // subtasks and get merged into one block. The rest describe the subtask.
-const ORDER_COLUMNS = 5;
+const ORDER_COLUMNS = 6;
 // 1-based, the "Subtask done" column that gets the green/red fill.
 const DONE_COLUMN = HEADERS.length;
 
@@ -41,6 +42,7 @@ const COLUMN_FORMATS = [
   TEXT, // Order
   TEXT, // Order labels
   NUMBER, // Order total
+  DATE, // Order start
   DATE, // Order due
   TEXT, // Order status
   TEXT, // Subtask
@@ -99,7 +101,7 @@ export async function POST() {
     const start = rows.length;
     const status = isTaskComplete(task) ? "Done" : "In progress";
     const labels = task.labels.map((l) => l.name).join(", ");
-    const order = [task.title, labels, task.total, task.due_date, status];
+    const order = [task.title, labels, task.total, task.start_date, task.due_date, status];
 
     if (task.subtasks.length === 0) {
       rows.push([...order, "", "", ""]);

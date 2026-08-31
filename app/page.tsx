@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import CalendarView from "@/components/CalendarView";
 import CapacityOverview from "@/components/CapacityOverview";
 import CategorySummary from "@/components/CategorySummary";
 import DueBanner from "@/components/DueBanner";
@@ -42,8 +43,22 @@ export default function Home() {
 
   const [activeLabelId, setActiveLabelId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<"board" | "calendar">("board");
   const [changingName, setChangingName] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("view") === "calendar") setView("calendar");
+  }, []);
+
+  const changeView = (v: "board" | "calendar") => {
+    setView(v);
+    const url = new URL(window.location.href);
+    if (v === "calendar") url.searchParams.set("view", "calendar");
+    else url.searchParams.delete("view");
+    window.history.replaceState({}, "", url.toString());
+  };
 
   const labels = useMemo(() => labelsInUse(board.tasks), [board.tasks]);
   // If the active label was deleted or fell out of use, fall back to All.
@@ -134,6 +149,31 @@ export default function Home() {
 
       <DueBanner tasks={board.tasks} />
 
+      <div className="mt-3 flex gap-1 rounded-full bg-neutral-200/80 p-0.5">
+        <button
+          onClick={() => changeView("board")}
+          className={`flex-1 rounded-full py-1.5 text-sm font-medium transition-colors ${
+            view === "board"
+              ? "bg-white text-neutral-900 shadow-sm"
+              : "text-neutral-500"
+          }`}
+        >
+          Board
+        </button>
+        <button
+          onClick={() => changeView("calendar")}
+          className={`flex-1 rounded-full py-1.5 text-sm font-medium transition-colors ${
+            view === "calendar"
+              ? "bg-white text-neutral-900 shadow-sm"
+              : "text-neutral-500"
+          }`}
+        >
+          Calendar
+        </button>
+      </div>
+
+      {view === "board" ? (
+      <>
       <div className="sticky top-0 z-10 -mx-4 mt-3 bg-neutral-100/95 px-4 py-1 backdrop-blur">
         <LabelTabs
           labels={labels}
@@ -169,9 +209,10 @@ export default function Home() {
               submitLabel="Add task"
               placeholder="What needs doing?"
               showTotal
+              showStartDate
               autoFocus
-              onSubmit={({ title, dueDate, labelNames, total }) => {
-                board.addTask(title, dueDate, labelNames, name, total ?? null);
+              onSubmit={({ title, startDate, dueDate, labelNames, total }) => {
+                board.addTask(title, dueDate, labelNames, name, total ?? null, startDate ?? null);
                 setAddingTask(false);
               }}
               onCancel={() => setAddingTask(false)}
@@ -250,6 +291,16 @@ export default function Home() {
             />
           ))}
         </ul>
+      )}
+      </>
+      ) : (
+        <CalendarView
+          tasks={board.tasks}
+          onSelectTask={(taskId) => {
+            changeView("board");
+            setExpandedIds((prev) => new Set(prev).add(taskId));
+          }}
+        />
       )}
 
       {/* Name picker: forced on first visit, dismissable when changing */}
