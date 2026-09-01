@@ -93,12 +93,17 @@ export function stageLoad(tasks: Task[], label: Label): StageLoad {
   return { label, orders, kaos, missingCount, overdue, soonestDue };
 }
 
-/** Outstanding workload for every stage, busiest first. */
+/** Outstanding workload for every stage, soonest due first. */
 export function stageLoads(tasks: Task[]): StageLoad[] {
   return stageLabels(tasks)
     .map((label) => stageLoad(tasks, label))
     .filter((load) => load.orders > 0)
-    .sort((a, b) => b.kaos - a.kaos || a.label.name.localeCompare(b.label.name));
+    .sort((a, b) => {
+      if (a.soonestDue && b.soonestDue) return a.soonestDue < b.soonestDue ? -1 : a.soonestDue > b.soonestDue ? 1 : 0;
+      if (a.soonestDue) return -1;
+      if (b.soonestDue) return 1;
+      return a.label.name.localeCompare(b.label.name);
+    });
 }
 
 /**
