@@ -76,7 +76,14 @@ export function stageLoad(tasks: Task[], label: Label): StageLoad {
     if (task.total === null) missingCount++;
     else kaos += task.total;
 
-    const due = effectiveDueDate(task);
+    const stageDue = task.subtasks
+      .filter((st) => !st.done && st.labels.some((l) => l.id === label.id))
+      .reduce<string | null>(
+        (min, st) =>
+          st.due_date ? (min === null || st.due_date < min ? st.due_date : min) : min,
+        null
+      );
+    const due = stageDue ?? effectiveDueDate(task);
     if (due) {
       if (daysUntil(due) < 0) overdue++;
       if (soonestDue === null || due < soonestDue) soonestDue = due;
