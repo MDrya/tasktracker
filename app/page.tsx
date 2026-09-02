@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 import CalendarView from "@/components/CalendarView";
 import CapacityOverview from "@/components/CapacityOverview";
 import CategorySummary from "@/components/CategorySummary";
@@ -43,20 +44,21 @@ export default function Home() {
 
   const [activeLabelId, setActiveLabelId] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [view, setView] = useState<"board" | "calendar">("board");
+  const [view, setView] = useState<"board" | "calendar" | "analytics">("board");
   const [changingName, setChangingName] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("view") === "calendar") setView("calendar");
+    const v = params.get("view");
+    if (v === "calendar" || v === "analytics") setView(v);
   }, []);
 
-  const changeView = (v: "board" | "calendar") => {
+  const changeView = (v: "board" | "calendar" | "analytics") => {
     setView(v);
     const url = new URL(window.location.href);
-    if (v === "calendar") url.searchParams.set("view", "calendar");
-    else url.searchParams.delete("view");
+    if (v === "board") url.searchParams.delete("view");
+    else url.searchParams.set("view", v);
     window.history.replaceState({}, "", url.toString());
   };
 
@@ -150,29 +152,24 @@ export default function Home() {
       <DueBanner tasks={board.tasks} />
 
       <div className="mt-3 flex gap-1 rounded-full bg-neutral-200/80 p-0.5">
-        <button
-          onClick={() => changeView("board")}
-          className={`flex-1 rounded-full py-1.5 text-sm font-medium transition-colors ${
-            view === "board"
-              ? "bg-white text-neutral-900 shadow-sm"
-              : "text-neutral-500"
-          }`}
-        >
-          Board
-        </button>
-        <button
-          onClick={() => changeView("calendar")}
-          className={`flex-1 rounded-full py-1.5 text-sm font-medium transition-colors ${
-            view === "calendar"
-              ? "bg-white text-neutral-900 shadow-sm"
-              : "text-neutral-500"
-          }`}
-        >
-          Calendar
-        </button>
+        {(["board", "calendar", "analytics"] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => changeView(v)}
+            className={`flex-1 rounded-full py-1.5 text-sm font-medium transition-colors ${
+              view === v
+                ? "bg-white text-neutral-900 shadow-sm"
+                : "text-neutral-500"
+            }`}
+          >
+            {v[0].toUpperCase() + v.slice(1)}
+          </button>
+        ))}
       </div>
 
-      {view === "board" ? (
+      {view === "analytics" ? (
+        <AnalyticsDashboard tasks={board.tasks} />
+      ) : view === "board" ? (
       <>
       <div className="sticky top-0 z-10 -mx-4 mt-3 bg-neutral-100/95 px-4 py-1 backdrop-blur">
         <LabelTabs
