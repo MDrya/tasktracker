@@ -125,7 +125,12 @@ function BarChart({
     1,
     ...trends.map((t) => Math.max(t.ordersCreated, t.ordersCompleted))
   );
-  const barW = 100 / trends.length;
+  const n = trends.length;
+  const W = 320;
+  const gw = W / n;
+  const gap = Math.max(1, gw * 0.1);
+  const bw = (gw - gap * 2 - 2) / 2;
+  const labelEvery = n > 12 ? Math.ceil(n / 8) : n > 8 ? 2 : 1;
 
   return (
     <div className="rounded-2xl bg-white p-4 shadow-sm">
@@ -148,33 +153,33 @@ function BarChart({
         preserveAspectRatio="xMidYMid meet"
       >
         {trends.map((t, i) => {
-          const x = i * (320 / trends.length);
-          const gw = 320 / trends.length;
-          const bw = gw * 0.35;
-          const createdH = (t.ordersCreated / max) * 120;
-          const completedH = (t.ordersCompleted / max) * 120;
+          const x = i * gw;
+          const createdH = (t.ordersCreated / max) * 110;
+          const completedH = (t.ordersCompleted / max) * 110;
+          const x1 = x + gap;
+          const x2 = x + gap + bw + 2;
           return (
             <g key={t.weekStart}>
               <rect
-                x={x + gw * 0.1}
+                x={x1}
                 y={130 - createdH}
-                width={bw}
+                width={Math.max(bw, 2)}
                 height={createdH}
-                rx="3"
+                rx="2"
                 fill="#c7d2fe"
               />
               <rect
-                x={x + gw * 0.1 + bw + 2}
+                x={x2}
                 y={130 - completedH}
-                width={bw}
+                width={Math.max(bw, 2)}
                 height={completedH}
-                rx="3"
+                rx="2"
                 fill="#4f46e5"
               />
               {t.ordersCreated > 0 && (
                 <text
-                  x={x + gw * 0.1 + bw / 2}
-                  y={125 - createdH}
+                  x={x1 + bw / 2}
+                  y={123 - createdH}
                   textAnchor="middle"
                   className="fill-neutral-500"
                   fontSize="9"
@@ -184,8 +189,8 @@ function BarChart({
               )}
               {t.ordersCompleted > 0 && (
                 <text
-                  x={x + gw * 0.1 + bw + 2 + bw / 2}
-                  y={125 - completedH}
+                  x={x2 + bw / 2}
+                  y={123 - completedH}
                   textAnchor="middle"
                   className="fill-neutral-500"
                   fontSize="9"
@@ -193,15 +198,17 @@ function BarChart({
                   {t.ordersCompleted}
                 </text>
               )}
-              <text
-                x={x + gw / 2}
-                y="150"
-                textAnchor="middle"
-                className="fill-neutral-400"
-                fontSize="9"
-              >
-                {t.weekLabel}
-              </text>
+              {i % labelEvery === 0 && (
+                <text
+                  x={x + gw / 2}
+                  y="148"
+                  textAnchor="middle"
+                  className="fill-neutral-400"
+                  fontSize="9"
+                >
+                  {t.weekLabel}
+                </text>
+              )}
             </g>
           );
         })}
@@ -386,9 +393,16 @@ export default function AnalyticsDashboard({ tasks }: { tasks: Task[] }) {
   const [range, setRange] = useState<TimeRange>(8);
 
   const stats = useMemo(() => computeCompletionStats(tasks), [tasks]);
+  const allTimeWeeks = useMemo(() => {
+    if (tasks.length === 0) return 8;
+    const oldest = tasks.reduce((min, t) => (t.created_at < min ? t.created_at : min), tasks[0].created_at);
+    const weeks = Math.ceil((Date.now() - new Date(oldest).getTime()) / (7 * 86_400_000)) + 1;
+    return Math.max(2, Math.min(weeks, 26));
+  }, [tasks]);
+
   const trends = useMemo(
-    () => computeWeeklyTrends(tasks, range === 0 ? 52 : range),
-    [tasks, range]
+    () => computeWeeklyTrends(tasks, range === 0 ? allTimeWeeks : range),
+    [tasks, range, allTimeWeeks]
   );
   const bottlenecks = useMemo(() => computeStageBottlenecks(tasks), [tasks]);
   const onTime = useMemo(() => computeOnTimeRate(tasks), [tasks]);
