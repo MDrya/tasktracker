@@ -87,24 +87,18 @@ export function stageSequence(tasks: Task[]): Label[] {
 }
 
 /**
- * Stages to offer for an order: the ones other orders of the same product
- * went through (a KEMEJA order doesn't need a jersey's CETAK PRESS), in
- * workshop order. With no such history, every stage is offered and
- * `fromHistory` is false, so callers can avoid bulk-adding a guess.
+ * Stages other orders of the same product went through (a KEMEJA order
+ * doesn't need a jersey's CETAK PRESS), in workshop order. Empty when the
+ * product has no history yet.
  */
-export function suggestedStages(
-  tasks: Task[],
-  order: Task,
-  sequence: Label[]
-): { stages: Label[]; fromHistory: boolean } {
+export function suggestedStages(tasks: Task[], order: Task, sequence: Label[]): Label[] {
   const productIds = new Set(order.labels.map((l) => l.id));
   const used = new Set<string>();
   for (const t of tasks) {
     if (t.id === order.id || !t.labels.some((l) => productIds.has(l.id))) continue;
     for (const st of t.subtasks) for (const l of st.labels) used.add(l.id);
   }
-  if (used.size === 0) return { stages: sequence, fromHistory: false };
-  return { stages: sequence.filter((l) => used.has(l.id)), fromHistory: true };
+  return sequence.filter((l) => used.has(l.id));
 }
 
 /** Outstanding workload for one stage. */

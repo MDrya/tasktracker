@@ -67,8 +67,9 @@ contents and clicking **Run**:
 4. `0004_done_at_and_label_case.sql` — records when each subtask is ticked
    (used by Analytics) and makes label names case-insensitive, merging
    existing duplicates like "Jahit"/"jahit".
+5. `0005_uppercase_labels.sql` — one-off: writes every label name in capitals.
 
-0002 and 0004 are safe to re-run.
+0002, 0004 and 0005 are safe to re-run.
 
 ### 3. Set environment variables
 
@@ -158,9 +159,15 @@ are left alone.
 - **The order's number is its piece count (kaos)**, a whole number on main
   tasks only. All capacity and analytics figures read it as pieces, so it
   must never hold a price (`showTotal` in `components/EntityForm.tsx`).
-- **Adding a subtask keeps the card open** so several stages can be entered
-  in a row; "Quick add stage" adds the usual stages in one tap, in the order
-  past orders used them (`components/TaskCard.tsx`).
+- **A subtask's name is optional**: leave it empty and it takes its stage
+  label's name. The Add subtask form offers stages as one-tap chips, with the
+  stages other orders of the same product used listed first
+  (`components/TaskCard.tsx`).
+- **Adding a subtask collapses the card**, returning you to the board
+  overview rather than leaving the card open.
+- **Labels are filtered from one "Filter" button** grouped into Stages and
+  Products, so the bar stays one line however many labels exist
+  (`components/LabelFilter.tsx`).
 - **Finished orders move to a collapsed "Finished orders" section** three
   days after their last stage is ticked. Search still finds them.
 - **Finished orders sink to the bottom**: a task counts as finished once

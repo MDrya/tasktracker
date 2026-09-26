@@ -29,6 +29,7 @@ export default function EntityForm({
   initialStartDate = null,
   showStartDate = false,
   labelSuggestions = [],
+  titleOptional = false,
   submitLabel,
   placeholder,
   autoFocus = false,
@@ -43,6 +44,9 @@ export default function EntityForm({
   initialStartDate?: string | null;
   showStartDate?: boolean;
   labelSuggestions?: string[];
+  /** Allow an empty title; the first label is used as the title instead,
+   *  so a subtask can be just "stage + date". */
+  titleOptional?: boolean;
   submitLabel: string;
   placeholder: string;
   autoFocus?: boolean;
@@ -66,10 +70,16 @@ export default function EntityForm({
     showStartDate && startDate && dueDate && startDate > dueDate
       ? "Start date is after the due date."
       : null;
-  const canSubmit = title.trim() !== "" && !piecesError && !datesError;
+  const labelNames = splitLabels(labels);
+  const finalTitle = title.trim() || (titleOptional ? (labelNames[0] ?? "") : "");
+  const canSubmit = finalTitle !== "" && !piecesError && !datesError;
 
-  const typed = new Set(splitLabels(labels).map((l) => l.toLowerCase()));
-  const suggestions = labelSuggestions.filter((s) => !typed.has(s.toLowerCase()));
+  const typed = new Set(labelNames.map((l) => l.toLowerCase()));
+  const suggestions = [
+    ...new Map(labelSuggestions.map((s) => [s.toLowerCase(), s])).entries(),
+  ]
+    .filter(([key]) => !typed.has(key))
+    .map(([, name]) => name);
 
   const addSuggestion = (name: string) => {
     const current = splitLabels(labels);
@@ -80,10 +90,10 @@ export default function EntityForm({
     e.preventDefault();
     if (!canSubmit) return;
     onSubmit({
-      title: title.trim(),
+      title: finalTitle,
       ...(showStartDate ? { startDate: startDate || null } : {}),
       dueDate: dueDate || null,
-      labelNames: splitLabels(labels),
+      labelNames,
       ...(showTotal ? { total: pieces } : {}),
     });
     // Reset only in "add" mode (edit forms are closed by the parent).
@@ -118,7 +128,9 @@ export default function EntityForm({
         autoFocus={autoFocus}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder={placeholder}
+        placeholder={
+          titleOptional && labelNames[0] ? `${placeholder} — “${labelNames[0]}”` : placeholder
+        }
         aria-label="Title"
         className={inputClass}
       />

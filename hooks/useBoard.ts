@@ -19,12 +19,6 @@ function pendingLabels(names: string[]): Label[] {
   return db.cleanLabelNames(names).map((name) => ({ id: `pending:${name}`, name }));
 }
 
-export interface NewSubtaskInput {
-  title: string;
-  dueDate: string | null;
-  labelNames: string[];
-}
-
 /**
  * Board state + realtime sync + optimistic mutations.
  *
@@ -245,47 +239,6 @@ export function useBoard(enabled: boolean) {
 
   // ----- subtasks ---------------------------------------------------------
 
-  /** Add several subtasks in one step. They are written one after another
-   *  so their creation order, which is their display order, is preserved. */
-  const addSubtasks = useCallback(
-    (taskId: string, items: NewSubtaskInput[], createdBy: string | null) => {
-      const now = Date.now();
-      const subtasks: Subtask[] = items.map((item, i) => ({
-        id: crypto.randomUUID(),
-        task_id: taskId,
-        title: item.title,
-        due_date: item.dueDate,
-        done: false,
-        done_at: null,
-        created_by: createdBy,
-        created_at: new Date(now + i).toISOString(),
-        labels: pendingLabels(item.labelNames),
-      }));
-      return mutate(
-        (prev) =>
-          prev.map((t) =>
-            t.id === taskId ? { ...t, subtasks: [...t.subtasks, ...subtasks] } : t
-          ),
-        async () => {
-          for (const [i, st] of subtasks.entries()) {
-            await db.createSubtask(
-              {
-                id: st.id,
-                task_id: taskId,
-                title: st.title,
-                due_date: st.due_date,
-                created_by: createdBy,
-              },
-              items[i].labelNames
-            );
-          }
-        },
-        items.length === 1 ? "Couldn't add the subtask." : "Couldn't add the stages."
-      );
-    },
-    [mutate]
-  );
-
   const addSubtask = useCallback(
     (
       taskId: string,
@@ -293,8 +246,32 @@ export function useBoard(enabled: boolean) {
       dueDate: string | null,
       labelNames: string[],
       createdBy: string | null
-    ) => addSubtasks(taskId, [{ title, dueDate, labelNames }], createdBy),
-    [addSubtasks]
+    ) => {
+      const subtask: Subtask = {
+        id: crypto.randomUUID(),
+        task_id: taskId,
+        title,
+        due_date: dueDate,
+        done: false,
+        done_at: null,
+        created_by: createdBy,
+        created_at: new Date().toISOString(),
+        labels: pendingLabels(labelNames),
+      };
+      return mutate(
+        (prev) =>
+          prev.map((t) =>
+            t.id === taskId ? { ...t, subtasks: [...t.subtasks, subtask] } : t
+          ),
+        () =>
+          db.createSubtask(
+            { id: subtask.id, task_id: taskId, title, due_date: dueDate, created_by: createdBy },
+            labelNames
+          ),
+        "Couldn't add the subtask."
+      );
+    },
+    [mutate]
   );
 
   const editSubtask = useCallback(
@@ -403,7 +380,6 @@ export function useBoard(enabled: boolean) {
     editTask,
     removeTask,
     addSubtask,
-    addSubtasks,
     editSubtask,
     toggleSubtask,
     removeSubtask,

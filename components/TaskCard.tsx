@@ -15,13 +15,12 @@ export default function TaskCard({
   expanded,
   dimmed = false,
   stages,
-  quickStages,
+  suggestedStages,
   productSuggestions,
   onToggleExpand,
   onEditTask,
   onDeleteTask,
   onAddSubtask,
-  onAddStages,
   onEditSubtask,
   onToggleSubtask,
   onDeleteSubtask,
@@ -33,9 +32,8 @@ export default function TaskCard({
   dimmed?: boolean;
   /** Every stage label, in the workshop's usual order. */
   stages: Label[];
-  /** Stages to offer as one-tap buttons; `fromHistory` means they come
-   *  from other orders of the same product, so "Add all" is safe. */
-  quickStages: { stages: Label[]; fromHistory: boolean };
+  /** Stages other orders of the same product went through; offered first. */
+  suggestedStages: Label[];
   productSuggestions: string[];
   onToggleExpand: () => void;
   onEditTask: (patch: TaskPatch, labelNames: string[]) => void;
@@ -45,8 +43,6 @@ export default function TaskCard({
     dueDate: string | null,
     labelNames: string[]
   ) => void;
-  /** Add one subtask per stage name, titled and labelled with it. */
-  onAddStages: (stageNames: string[]) => void;
   onEditSubtask: (
     subtaskId: string,
     patch: SubtaskPatch,
@@ -65,17 +61,18 @@ export default function TaskCard({
   const complete = isTaskComplete(task);
   const stageNames = stages.map((l) => l.name);
 
-  // A stage counts as present if a subtask carries its label or is simply
-  // titled with its name.
+  // Stage chips in the Add subtask form: the stages this order still lacks
+  // that its product usually needs come first, then every other stage.
   const present = new Set(
     task.subtasks.flatMap((st) => [
       st.title.trim().toLowerCase(),
       ...st.labels.map((l) => l.name.toLowerCase()),
     ])
   );
-  const missingStages = quickStages.stages
-    .map((l) => l.name)
-    .filter((n) => !present.has(n.toLowerCase()));
+  const addStageChips = [
+    ...suggestedStages.map((l) => l.name).filter((n) => !present.has(n.toLowerCase())),
+    ...stageNames,
+  ];
 
   return (
     <li
@@ -145,48 +142,20 @@ export default function TaskCard({
                 </ul>
               )}
 
-              {missingStages.length > 0 && (
-                <div className="mt-3">
-                  <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-neutral-400">
-                    {quickStages.fromHistory
-                      ? `Usual stages for ${task.labels.map((l) => l.name).join(" / ")}`
-                      : "Quick add stage"}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {missingStages.map((name) => (
-                      <button
-                        key={name}
-                        onClick={() => onAddStages([name])}
-                        className="min-h-11 rounded-full bg-indigo-50 px-4 text-sm font-medium text-indigo-700 active:bg-indigo-100"
-                      >
-                        + {name}
-                      </button>
-                    ))}
-                    {quickStages.fromHistory && missingStages.length > 1 && (
-                      <button
-                        onClick={() => onAddStages(missingStages)}
-                        className="min-h-11 rounded-full bg-indigo-600 px-4 text-sm font-medium text-white active:bg-indigo-700"
-                      >
-                        Add all
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* The card stays open after adding, so several stages can be
-                  entered in a row. */}
               <div className="mt-3 rounded-xl bg-neutral-50 p-3">
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-400">
                   Add subtask
                 </p>
                 <EntityForm
                   submitLabel="Add subtask"
-                  placeholder="Subtask title"
-                  labelSuggestions={stageNames}
-                  onSubmit={({ title, dueDate, labelNames }) =>
-                    onAddSubtask(title, dueDate, labelNames)
-                  }
+                  placeholder="Name (optional)"
+                  titleOptional
+                  labelSuggestions={addStageChips}
+                  onSubmit={({ title, dueDate, labelNames }) => {
+                    onAddSubtask(title, dueDate, labelNames);
+                    // Collapse back to the overview once a subtask is added.
+                    onToggleExpand();
+                  }}
                 />
               </div>
 

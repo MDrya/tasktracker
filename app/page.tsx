@@ -8,7 +8,7 @@ import CategorySummary from "@/components/CategorySummary";
 import DueBanner from "@/components/DueBanner";
 import EntityForm from "@/components/EntityForm";
 import StageSummary from "@/components/StageSummary";
-import LabelTabs from "@/components/LabelTabs";
+import LabelFilter from "@/components/LabelFilter";
 import NamePicker from "@/components/NamePicker";
 import PushToggle from "@/components/PushToggle";
 import TaskCard from "@/components/TaskCard";
@@ -117,10 +117,8 @@ export default function Home() {
   }, [board.tasks, activeId, trimmedQuery]);
 
   const stages = useMemo(() => stageSequence(board.tasks), [board.tasks]);
-  const productSuggestions = useMemo(
-    () => categoryLabels(board.tasks).map((l) => l.name),
-    [board.tasks]
-  );
+  const products = useMemo(() => categoryLabels(board.tasks), [board.tasks]);
+  const productSuggestions = useMemo(() => products.map((l) => l.name), [products]);
 
   // Scroll to a card once it has rendered (used by the calendar's
   // "Show in board view").
@@ -182,20 +180,13 @@ export default function Home() {
             : false
       }
       stages={stages}
-      quickStages={suggestedStages(board.tasks, task, stages)}
+      suggestedStages={suggestedStages(board.tasks, task, stages)}
       productSuggestions={productSuggestions}
       onToggleExpand={() => toggleExpanded(task.id)}
       onEditTask={(patch, labelNames) => board.editTask(task.id, patch, labelNames)}
       onDeleteTask={() => board.removeTask(task.id)}
       onAddSubtask={(title, dueDate, labelNames) =>
         board.addSubtask(task.id, title, dueDate, labelNames, name)
-      }
-      onAddStages={(stageNames) =>
-        board.addSubtasks(
-          task.id,
-          stageNames.map((n) => ({ title: n, dueDate: null, labelNames: [n] })),
-          name
-        )
       }
       onEditSubtask={(subtaskId, patch, labelNames) =>
         board.editSubtask(subtaskId, patch, labelNames)
@@ -264,8 +255,9 @@ export default function Home() {
       ) : view === "board" ? (
       <>
       <div className="sticky top-0 z-10 -mx-4 mt-3 bg-neutral-100/95 px-4 py-1 backdrop-blur">
-        <LabelTabs
-          labels={labels}
+        <LabelFilter
+          stages={stages}
+          products={products}
           activeLabelId={activeId}
           onSelect={setActiveLabelId}
           onRename={board.renameLabel}

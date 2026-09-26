@@ -1,6 +1,14 @@
 "use client";
 
-/** Lightweight in-app confirm dialog (replaces window.confirm). */
+import { createPortal } from "react-dom";
+
+/**
+ * Lightweight in-app confirm dialog (replaces window.confirm).
+ *
+ * Rendered into <body>: inside an ancestor with a backdrop blur (the
+ * sticky filter bar) a `fixed` overlay would be pinned to that ancestor
+ * instead of covering the screen.
+ */
 export default function ConfirmDialog({
   open,
   title,
@@ -17,7 +25,7 @@ export default function ConfirmDialog({
   onCancel: () => void;
 }) {
   if (!open) return null;
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center"
       onClick={onCancel}
@@ -46,6 +54,7 @@ export default function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

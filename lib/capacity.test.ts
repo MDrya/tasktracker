@@ -46,15 +46,12 @@ describe("suggestedStages", () => {
   it("offers only stages other orders of the same product used", () => {
     const order = task({ labels: [kemeja] });
     const result = suggestedStages([...all, order], order, stageSequence(all));
-    expect(result.fromHistory).toBe(true);
-    expect(result.stages.map((l) => l.name).sort()).toEqual(["Jahit", "Packing"]);
+    expect(result.map((l) => l.name).sort()).toEqual(["Jahit", "Packing"]);
   });
 
-  it("falls back to every stage when the product has no history", () => {
+  it("offers nothing when the product has no history", () => {
     const order = task({ labels: [label("Jaket")] });
-    const result = suggestedStages([...all, order], order, stageSequence(all));
-    expect(result.fromHistory).toBe(false);
-    expect(result.stages).toHaveLength(3);
+    expect(suggestedStages([...all, order], order, stageSequence(all))).toEqual([]);
   });
 });
 

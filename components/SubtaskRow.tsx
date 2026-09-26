@@ -31,8 +31,9 @@ export default function SubtaskRow({
           initialDueDate={subtask.due_date}
           initialLabels={subtask.labels.map((l) => l.name)}
           labelSuggestions={labelSuggestions}
+          titleOptional
           submitLabel="Save"
-          placeholder="Subtask title"
+          placeholder="Name (optional)"
           autoFocus
           onSubmit={({ title, dueDate, labelNames }) => {
             onEdit({ title, due_date: dueDate }, labelNames);

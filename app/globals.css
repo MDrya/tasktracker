@@ -1,10 +1,1 @@
 @import "tailwindcss";
-
-/* Hide scrollbars on the horizontal label tab bar while keeping it scrollable */
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
