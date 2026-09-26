@@ -59,6 +59,54 @@ export function stageLabels(tasks: Task[]): Label[] {
   return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Stage labels in the order the workshop usually does them, learned from
+ * where each stage tends to sit in existing orders' subtask lists. There is
+ * no fixed pipeline in the data, so history is the best guide.
+ */
+export function stageSequence(tasks: Task[]): Label[] {
+  const stats = new Map<string, { label: Label; sum: number; n: number }>();
+  for (const task of tasks) {
+    const count = task.subtasks.length;
+    task.subtasks.forEach((st, i) => {
+      const position = count > 1 ? i / (count - 1) : 0;
+      for (const label of st.labels) {
+        const s = stats.get(label.id) ?? { label, sum: 0, n: 0 };
+        s.sum += position;
+        s.n++;
+        stats.set(label.id, s);
+      }
+    });
+  }
+  return [...stats.values()]
+    .sort(
+      (a, b) =>
+        a.sum / a.n - b.sum / b.n || a.label.name.localeCompare(b.label.name)
+    )
+    .map((s) => s.label);
+}
+
+/**
+ * Stages to offer for an order: the ones other orders of the same product
+ * went through (a KEMEJA order doesn't need a jersey's CETAK PRESS), in
+ * workshop order. With no such history, every stage is offered and
+ * `fromHistory` is false, so callers can avoid bulk-adding a guess.
+ */
+export function suggestedStages(
+  tasks: Task[],
+  order: Task,
+  sequence: Label[]
+): { stages: Label[]; fromHistory: boolean } {
+  const productIds = new Set(order.labels.map((l) => l.id));
+  const used = new Set<string>();
+  for (const t of tasks) {
+    if (t.id === order.id || !t.labels.some((l) => productIds.has(l.id))) continue;
+    for (const st of t.subtasks) for (const l of st.labels) used.add(l.id);
+  }
+  if (used.size === 0) return { stages: sequence, fromHistory: false };
+  return { stages: sequence.filter((l) => used.has(l.id)), fromHistory: true };
+}
+
 /** Outstanding workload for one stage. */
 export function stageLoad(tasks: Task[], label: Label): StageLoad {
   let orders = 0;

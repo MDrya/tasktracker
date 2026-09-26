@@ -9,11 +9,13 @@ import LabelChips from "./LabelChips";
 
 export default function SubtaskRow({
   subtask,
+  labelSuggestions,
   onToggle,
   onEdit,
   onDelete,
 }: {
   subtask: Subtask;
+  labelSuggestions: string[];
   onToggle: (done: boolean) => void;
   onEdit: (patch: SubtaskPatch, labelNames: string[]) => void;
   onDelete: () => void;
@@ -28,6 +30,7 @@ export default function SubtaskRow({
           initialTitle={subtask.title}
           initialDueDate={subtask.due_date}
           initialLabels={subtask.labels.map((l) => l.name)}
+          labelSuggestions={labelSuggestions}
           submitLabel="Save"
           placeholder="Subtask title"
           autoFocus
@@ -79,7 +82,9 @@ export default function SubtaskRow({
           {subtask.title}
         </p>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
-          {subtask.due_date && <DueBadge date={subtask.due_date} />}
+          {subtask.due_date && (
+            <DueBadge date={subtask.due_date} done={subtask.done} />
+          )}
           <LabelChips labels={subtask.labels} />
         </div>
       </div>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usePushSubscription } from "@/hooks/usePushSubscription";
+import Toast from "./Toast";
 
 function BellIcon() {
   return (
@@ -29,6 +30,8 @@ export default function PushToggle({
     subscribed,
     permissionDenied,
     busy,
+    error,
+    clearError,
     subscribe,
     unsubscribe,
   } = usePushSubscription(createdBy);
@@ -116,6 +119,8 @@ export default function PushToggle({
       >
         <BellIcon />
       </button>
+
+      <Toast message={error} onDismiss={clearError} />
 
       {showDenied && (
         <div

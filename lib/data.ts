@@ -44,20 +44,45 @@ export async function fetchBoard(): Promise<Task[]> {
   }));
 }
 
-/** Upsert labels by name and return their rows. Names are trimmed;
- *  empty entries are dropped. */
+/** Trimmed, non-empty names, deduplicated ignoring case (first spelling wins). */
+export function cleanLabelNames(names: string[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const raw of names) {
+    const name = raw.trim();
+    if (name && !byKey.has(name.toLowerCase())) byKey.set(name.toLowerCase(), name);
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Find-or-create labels by name, ignoring case, so "jahit" reuses an
+ * existing "Jahit" instead of starting a second stage with split counts.
+ */
 async function ensureLabels(names: string[]): Promise<Label[]> {
-  const clean = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
+  const clean = cleanLabelNames(names);
   if (clean.length === 0) return [];
-  const { data, error } = await getSupabase()
-    .from("labels")
-    .upsert(
-      clean.map((name) => ({ name })),
-      { onConflict: "name", ignoreDuplicates: false }
-    )
-    .select();
-  if (error) throw error;
-  return data as Label[];
+  const supabase = getSupabase();
+
+  const readAll = async () => {
+    const { data, error } = await supabase.from("labels").select("*");
+    if (error) throw error;
+    return new Map((data as Label[]).map((l) => [l.name.toLowerCase(), l]));
+  };
+
+  let byKey = await readAll();
+  const missing = clean.filter((n) => !byKey.has(n.toLowerCase()));
+  if (missing.length > 0) {
+    for (const name of missing) {
+      const { error } = await supabase.from("labels").insert({ name });
+      // 23505: another device created it a moment ago; the re-read finds it.
+      if (error && error.code !== "23505") throw error;
+    }
+    byKey = await readAll();
+  }
+
+  return clean
+    .map((n) => byKey.get(n.toLowerCase()))
+    .filter((l): l is Label => l !== undefined);
 }
 
 /** Replace the label set on a task or subtask with the given names. */

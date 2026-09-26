@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 const HEADERS = [
   "Order",
   "Order labels",
-  "Order total",
+  "Kaos (pcs)",
   "Order start",
   "Order due",
   "Order status",
@@ -41,7 +41,7 @@ const NUMBER = "#,##0.##";
 const COLUMN_FORMATS = [
   TEXT, // Order
   TEXT, // Order labels
-  NUMBER, // Order total
+  NUMBER, // Kaos (pcs)
   DATE, // Order start
   DATE, // Order due
   TEXT, // Order status

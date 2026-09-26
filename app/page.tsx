@@ -16,16 +16,38 @@ import Toast from "@/components/Toast";
 import { useBoard } from "@/hooks/useBoard";
 import { useDisplayName } from "@/hooks/useDisplayName";
 import {
+  categoryLabels,
   categoryLoad,
   categoryLoads,
   openWorkload,
   stageLoad,
   stageLoads,
   stageNeedsWork,
+  stageSequence,
+  suggestedStages,
 } from "@/lib/capacity";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import type { Label, Task } from "@/lib/types";
-import { isTaskComplete, sortByUrgency } from "@/lib/urgency";
+import { finishedAt, isTaskComplete, sortByUrgency } from "@/lib/urgency";
+
+/** Finished orders stay in the main list this long, then move to the
+ *  collapsed "Finished" section so the board shows current work. */
+const RECENTLY_FINISHED_MS = 3 * 86_400_000;
+
+function isArchived(task: Task, now: number): boolean {
+  if (!isTaskComplete(task)) return false;
+  const done = finishedAt(task);
+  // Finished before finish times were recorded: treat as long done.
+  return done === null || now - Date.parse(done) > RECENTLY_FINISHED_MS;
+}
+
+function matchesQuery(task: Task, query: string): boolean {
+  const q = query.toLowerCase();
+  return (
+    task.title.toLowerCase().includes(q) ||
+    task.subtasks.some((st) => st.title.toLowerCase().includes(q))
+  );
+}
 
 /** All labels currently in use, from both tasks and subtasks, unique by id. */
 function labelsInUse(tasks: Task[]): Label[] {
@@ -47,6 +69,9 @@ export default function Home() {
   const [view, setView] = useState<"board" | "calendar" | "analytics">("board");
   const [changingName, setChangingName] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
+  const [query, setQuery] = useState("");
+  const [showFinished, setShowFinished] = useState(false);
+  const [scrollToId, setScrollToId] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -69,17 +94,43 @@ export default function Home() {
     : null;
 
   // Filter: a label tab shows tasks where the task OR any subtask has the
-  // label; urgency sorting still applies within the filtered set.
-  const visibleTasks = useMemo(() => {
-    const filtered = activeId
+  // label; urgency sorting still applies within the filtered set. A search
+  // looks through finished orders too, so old orders can still be found.
+  const trimmedQuery = query.trim();
+  const { visibleTasks, finishedTasks } = useMemo(() => {
+    let filtered = activeId
       ? board.tasks.filter(
           (t) =>
             t.labels.some((l) => l.id === activeId) ||
             t.subtasks.some((st) => st.labels.some((l) => l.id === activeId))
         )
       : board.tasks;
-    return sortByUrgency(filtered);
-  }, [board.tasks, activeId]);
+    if (trimmedQuery) {
+      filtered = filtered.filter((t) => matchesQuery(t, trimmedQuery));
+      return { visibleTasks: sortByUrgency(filtered), finishedTasks: [] };
+    }
+    const now = Date.now();
+    return {
+      visibleTasks: sortByUrgency(filtered.filter((t) => !isArchived(t, now))),
+      finishedTasks: sortByUrgency(filtered.filter((t) => isArchived(t, now))),
+    };
+  }, [board.tasks, activeId, trimmedQuery]);
+
+  const stages = useMemo(() => stageSequence(board.tasks), [board.tasks]);
+  const productSuggestions = useMemo(
+    () => categoryLabels(board.tasks).map((l) => l.name),
+    [board.tasks]
+  );
+
+  // Scroll to a card once it has rendered (used by the calendar's
+  // "Show in board view").
+  useEffect(() => {
+    if (!scrollToId || view !== "board") return;
+    const el = document.getElementById(`task-${scrollToId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    setScrollToId(null);
+  }, [scrollToId, view, visibleTasks, finishedTasks, showFinished]);
 
   const loads = useMemo(() => stageLoads(board.tasks), [board.tasks]);
   const categories = useMemo(() => categoryLoads(board.tasks), [board.tasks]);
@@ -112,6 +163,47 @@ export default function Home() {
       else next.add(id);
       return next;
     });
+
+  const renderCard = (task: Task) => (
+    <TaskCard
+      key={task.id}
+      task={task}
+      expanded={expandedIds.has(task.id)}
+      // Finished work stays visible but recedes. What counts as finished
+      // depends on the tab: on a stage, whether that step is cleared; on a
+      // product, whether the whole order is done. Using the stage rule on a
+      // product tab would dim every card, since a product label never sits
+      // on a subtask.
+      dimmed={
+        activeStage
+          ? !stageNeedsWork(task, activeStage.label.id)
+          : activeCategory
+            ? isTaskComplete(task)
+            : false
+      }
+      stages={stages}
+      quickStages={suggestedStages(board.tasks, task, stages)}
+      productSuggestions={productSuggestions}
+      onToggleExpand={() => toggleExpanded(task.id)}
+      onEditTask={(patch, labelNames) => board.editTask(task.id, patch, labelNames)}
+      onDeleteTask={() => board.removeTask(task.id)}
+      onAddSubtask={(title, dueDate, labelNames) =>
+        board.addSubtask(task.id, title, dueDate, labelNames, name)
+      }
+      onAddStages={(stageNames) =>
+        board.addSubtasks(
+          task.id,
+          stageNames.map((n) => ({ title: n, dueDate: null, labelNames: [n] })),
+          name
+        )
+      }
+      onEditSubtask={(subtaskId, patch, labelNames) =>
+        board.editSubtask(subtaskId, patch, labelNames)
+      }
+      onToggleSubtask={board.toggleSubtask}
+      onDeleteSubtask={board.removeSubtask}
+    />
+  );
 
   if (!configured) {
     return (
@@ -207,6 +299,7 @@ export default function Home() {
               placeholder="What needs doing?"
               showTotal
               showStartDate
+              labelSuggestions={productSuggestions}
               autoFocus
               onSubmit={({ title, startDate, dueDate, labelNames, total }) => {
                 board.addTask(title, dueDate, labelNames, name, total ?? null, startDate ?? null);
@@ -225,6 +318,19 @@ export default function Home() {
         )}
       </div>
 
+      {board.tasks.length > 0 && (
+        <div className="relative mt-3">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search orders"
+            aria-label="Search orders"
+            className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-base outline-none focus:border-indigo-400"
+          />
+        </div>
+      )}
+
       {/* Task list */}
       {board.loading ? (
         <div className="mt-6 flex flex-col gap-3">
@@ -232,13 +338,15 @@ export default function Home() {
             <div key={i} className="h-20 animate-pulse rounded-2xl bg-white" />
           ))}
         </div>
-      ) : visibleTasks.length === 0 ? (
+      ) : visibleTasks.length === 0 && finishedTasks.length === 0 ? (
         <div className="mt-12 text-center">
           <p className="text-3xl">{board.tasks.length === 0 ? "🌱" : "🔍"}</p>
           <p className="mt-2 font-medium text-neutral-700">
             {board.tasks.length === 0
               ? "Nothing here yet"
-              : "No tasks with this label"}
+              : trimmedQuery
+                ? "No orders match your search"
+                : "No tasks with this label"}
           </p>
           <p className="mt-1 text-sm text-neutral-500">
             {board.tasks.length === 0 ? (
@@ -246,7 +354,10 @@ export default function Home() {
             ) : (
               <button
                 className="font-medium text-indigo-600 underline"
-                onClick={() => setActiveLabelId(null)}
+                onClick={() => {
+                  setActiveLabelId(null);
+                  setQuery("");
+                }}
               >
                 Show all tasks
               </button>
@@ -254,48 +365,45 @@ export default function Home() {
           </p>
         </div>
       ) : (
-        <ul className="mt-4 flex flex-col gap-3">
-          {visibleTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              expanded={expandedIds.has(task.id)}
-              // Finished work stays visible but recedes. What counts as
-              // finished depends on the tab: on a stage, whether that step
-              // is cleared; on a product, whether the whole order is done.
-              // Using the stage rule on a product tab would dim every card,
-              // since a product label never sits on a subtask.
-              dimmed={
-                activeStage
-                  ? !stageNeedsWork(task, activeStage.label.id)
-                  : activeCategory
-                    ? isTaskComplete(task)
-                    : false
-              }
-              onToggleExpand={() => toggleExpanded(task.id)}
-              onEditTask={(patch, labelNames) =>
-                board.editTask(task.id, patch, labelNames)
-              }
-              onDeleteTask={() => board.removeTask(task.id)}
-              onAddSubtask={(title, dueDate, labelNames) =>
-                board.addSubtask(task.id, title, dueDate, labelNames, name)
-              }
-              onEditSubtask={(subtaskId, patch, labelNames) =>
-                board.editSubtask(subtaskId, patch, labelNames)
-              }
-              onToggleSubtask={board.toggleSubtask}
-              onDeleteSubtask={board.removeSubtask}
-            />
-          ))}
-        </ul>
+        <>
+          {visibleTasks.length > 0 ? (
+            <ul className="mt-4 flex flex-col gap-3">{visibleTasks.map(renderCard)}</ul>
+          ) : (
+            <p className="mt-6 text-center text-sm text-neutral-500">
+              Everything here is finished.
+            </p>
+          )}
+
+          {finishedTasks.length > 0 && (
+            <div className="mt-6">
+              <button
+                onClick={() => setShowFinished((s) => !s)}
+                aria-expanded={showFinished}
+                className="flex min-h-11 w-full items-center justify-between rounded-2xl bg-neutral-200/70 px-4 text-sm font-medium text-neutral-600 active:bg-neutral-200"
+              >
+                <span>Finished orders ({finishedTasks.length})</span>
+                <span aria-hidden>{showFinished ? "▲" : "▼"}</span>
+              </button>
+              {showFinished && (
+                <ul className="mt-3 flex flex-col gap-3">{finishedTasks.map(renderCard)}</ul>
+              )}
+            </div>
+          )}
+        </>
       )}
       </>
       ) : (
         <CalendarView
           tasks={board.tasks}
           onSelectTask={(taskId) => {
-            changeView("board");
+            setActiveLabelId(null);
+            setQuery("");
+            if (board.tasks.some((t) => t.id === taskId && isArchived(t, Date.now()))) {
+              setShowFinished(true);
+            }
             setExpandedIds((prev) => new Set(prev).add(taskId));
+            setScrollToId(taskId);
+            changeView("board");
           }}
         />
       )}

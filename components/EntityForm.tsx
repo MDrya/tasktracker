@@ -10,10 +10,15 @@ export interface EntityFormValues {
   total?: number | null;
 }
 
+function splitLabels(value: string): string[] {
+  return value.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 /**
- * Shared inline form for adding/editing tasks and subtasks:
- * title + optional due date + optional comma-separated labels.
- * `showTotal` adds the order-total field — main tasks only, never subtasks.
+ * Shared inline form for adding/editing tasks and subtasks: title, dates,
+ * comma-separated labels, and (orders only) the number of pieces.
+ * `labelSuggestions` shows existing labels as one-tap chips so staff reuse
+ * "Jahit" instead of typing a slightly different new one.
  */
 export default function EntityForm({
   initialTitle = "",
@@ -23,6 +28,7 @@ export default function EntityForm({
   showTotal = false,
   initialStartDate = null,
   showStartDate = false,
+  labelSuggestions = [],
   submitLabel,
   placeholder,
   autoFocus = false,
@@ -36,6 +42,7 @@ export default function EntityForm({
   showTotal?: boolean;
   initialStartDate?: string | null;
   showStartDate?: boolean;
+  labelSuggestions?: string[];
   submitLabel: string;
   placeholder: string;
   autoFocus?: boolean;
@@ -50,16 +57,34 @@ export default function EntityForm({
     initialTotal === null ? "" : String(initialTotal)
   );
 
+  const pieces = total.trim() === "" ? null : Number(total);
+  const piecesError =
+    showTotal && pieces !== null && (!Number.isInteger(pieces) || pieces < 0)
+      ? "Enter a whole number of pieces."
+      : null;
+  const datesError =
+    showStartDate && startDate && dueDate && startDate > dueDate
+      ? "Start date is after the due date."
+      : null;
+  const canSubmit = title.trim() !== "" && !piecesError && !datesError;
+
+  const typed = new Set(splitLabels(labels).map((l) => l.toLowerCase()));
+  const suggestions = labelSuggestions.filter((s) => !typed.has(s.toLowerCase()));
+
+  const addSuggestion = (name: string) => {
+    const current = splitLabels(labels);
+    setLabels([...current, name].join(", "));
+  };
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = title.trim();
-    if (!trimmed) return;
+    if (!canSubmit) return;
     onSubmit({
-      title: trimmed,
+      title: title.trim(),
       ...(showStartDate ? { startDate: startDate || null } : {}),
       dueDate: dueDate || null,
-      labelNames: labels.split(",").map((s) => s.trim()).filter(Boolean),
-      ...(showTotal ? { total: total.trim() === "" ? null : Number(total) } : {}),
+      labelNames: splitLabels(labels),
+      ...(showTotal ? { total: pieces } : {}),
     });
     // Reset only in "add" mode (edit forms are closed by the parent).
     if (!onCancel) {
@@ -73,6 +98,19 @@ export default function EntityForm({
 
   const inputClass =
     "w-full rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-base outline-none focus:border-indigo-400";
+  const captionClass = "text-xs font-medium text-neutral-500";
+
+  const labelsField = (
+    <label className="flex min-w-0 flex-[1.4] flex-col gap-1">
+      <span className={captionClass}>Labels</span>
+      <input
+        value={labels}
+        onChange={(e) => setLabels(e.target.value)}
+        placeholder="comma, separated"
+        className={inputClass}
+      />
+    </label>
+  );
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-2">
@@ -81,56 +119,67 @@ export default function EntityForm({
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder={placeholder}
+        aria-label="Title"
         className={inputClass}
       />
       <div className="flex gap-2">
         {showStartDate && (
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className={captionClass}>Start</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className={inputClass}
+            />
+          </label>
+        )}
+        <label className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className={captionClass}>Due</span>
           <input
             type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            aria-label="Start date"
-            className={`${inputClass} min-w-0 flex-1`}
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className={inputClass}
           />
-        )}
-        <input
-          type="date"
-          value={dueDate}
-          onChange={(e) => setDueDate(e.target.value)}
-          aria-label="Due date"
-          className={`${inputClass} min-w-0 flex-1`}
-        />
-        {!showStartDate && (
-          <input
-            value={labels}
-            onChange={(e) => setLabels(e.target.value)}
-            placeholder="labels, comma, separated"
-            aria-label="Labels"
-            className={`${inputClass} min-w-0 flex-[1.4]`}
-          />
-        )}
+        </label>
+        {!showStartDate && labelsField}
       </div>
-      {showStartDate && (
-        <input
-          value={labels}
-          onChange={(e) => setLabels(e.target.value)}
-          placeholder="labels, comma, separated"
-          aria-label="Labels"
-          className={inputClass}
-        />
+      {datesError && (
+        <p className="text-xs font-medium text-red-600">{datesError}</p>
+      )}
+      {showStartDate && labelsField}
+      {suggestions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => addSuggestion(s)}
+              className="min-h-9 rounded-full bg-indigo-50 px-3 text-xs font-medium text-indigo-700 active:bg-indigo-100"
+            >
+              + {s}
+            </button>
+          ))}
+        </div>
       )}
       {showTotal && (
-        <input
-          type="number"
-          inputMode="decimal"
-          step="any"
-          min="0"
-          value={total}
-          onChange={(e) => setTotal(e.target.value)}
-          placeholder="Order total (optional)"
-          aria-label="Order total"
-          className={inputClass}
-        />
+        <label className="flex flex-col gap-1">
+          <span className={captionClass}>Kaos (pcs)</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            step="1"
+            min="0"
+            value={total}
+            onChange={(e) => setTotal(e.target.value)}
+            placeholder="Number of pieces, e.g. 120"
+            className={inputClass}
+          />
+          {piecesError && (
+            <span className="text-xs font-medium text-red-600">{piecesError}</span>
+          )}
+        </label>
       )}
       <div className="flex gap-2">
         {onCancel && (
@@ -144,7 +193,7 @@ export default function EntityForm({
         )}
         <button
           type="submit"
-          disabled={!title.trim()}
+          disabled={!canSubmit}
           className="min-h-11 flex-1 rounded-xl bg-indigo-600 px-4 text-sm font-medium text-white active:bg-indigo-700 disabled:opacity-40"
         >
           {submitLabel}

@@ -1,17 +1,9 @@
+import { dayDiff, shortDate, todayISO } from "./dates";
 import type { Task, UrgencyLevel } from "./types";
-
-/** Parse an ISO "YYYY-MM-DD" date as local midnight (avoids the UTC
- *  off-by-one you get from `new Date("2026-01-01")` in western zones). */
-export function parseDate(iso: string): Date {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
 
 /** Whole days from today (local) to the given date. 0 = today, negative = past. */
 export function daysUntil(iso: string): number {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round((parseDate(iso).getTime() - today.getTime()) / 86_400_000);
+  return dayDiff(todayISO(), iso);
 }
 
 /**
@@ -49,10 +41,7 @@ export function dueLabel(iso: string): string {
   if (days === 0) return "Today";
   if (days === 1) return "Tomorrow";
   if (days <= 7) return `In ${days} days`;
-  return parseDate(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+  return shortDate(iso);
 }
 
 /**
@@ -64,6 +53,22 @@ export function dueLabel(iso: string): string {
  */
 export function isTaskComplete(task: Task): boolean {
   return task.subtasks.length > 0 && task.subtasks.every((st) => st.done);
+}
+
+/**
+ * When a finished order's last subtask was ticked, or null if the order is
+ * still open or any subtask was ticked before finish times were recorded.
+ */
+export function finishedAt(task: Task): string | null {
+  if (!isTaskComplete(task)) return null;
+  let latest: string | null = null;
+  for (const st of task.subtasks) {
+    if (!st.done_at) return null;
+    if (latest === null || Date.parse(st.done_at) > Date.parse(latest)) {
+      latest = st.done_at;
+    }
+  }
+  return latest;
 }
 
 export interface DueSummary {

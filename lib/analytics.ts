@@ -1,14 +1,96 @@
+import { categoryLoads } from "./capacity";
+import { daysBetween, startOfWeek, toISODate } from "./dates";
 import type { Label, Task } from "./types";
-import { isTaskComplete, parseDate } from "./urgency";
-import { stageLabels } from "./capacity";
+import { finishedAt, isTaskComplete } from "./urgency";
+
+/**
+ * Production analytics derived from the board. Finish times come from
+ * `subtasks.done_at`; orders finished before that was recorded have no
+ * finish time and are left out of timing figures rather than guessed at.
+ */
+
+const WEEK_MS = 7 * 86_400_000;
+
+/** Start of the analysed period: the Monday `weeks - 1` weeks before this
+ *  week's, matching the chart's buckets. Null means all time. */
+export function rangeStart(weeks: number | null, now = new Date()): Date | null {
+  if (weeks === null) return null;
+  const start = startOfWeek(now);
+  start.setDate(start.getDate() - (weeks - 1) * 7);
+  return start;
+}
+
+function inRange(timestamp: string, since: Date | null): boolean {
+  return since === null || Date.parse(timestamp) >= since.getTime();
+}
 
 export interface CompletionStats {
+  /** Orders created in the period. */
   totalOrders: number;
+  /** Of those, how many are finished. */
   completedOrders: number;
-  completionRate: number;
-  totalPieces: number;
-  completedPieces: number;
-  avgCompletionDays: number;
+  /** Percentage, or null when there are no orders to measure. */
+  completionRate: number | null;
+  /** Average days from order created to last stage ticked, for orders
+   *  finished in the period; null when none have a recorded finish time. */
+  avgCompletionDays: number | null;
+  /** Orders finished in the period that have a recorded finish time. */
+  timedOrders: number;
+}
+
+export function computeCompletionStats(
+  tasks: Task[],
+  since: Date | null
+): CompletionStats {
+  let totalOrders = 0;
+  let completedOrders = 0;
+  let totalDays = 0;
+  let timedOrders = 0;
+
+  for (const task of tasks) {
+    if (inRange(task.created_at, since)) {
+      totalOrders++;
+      if (isTaskComplete(task)) completedOrders++;
+    }
+    const done = finishedAt(task);
+    if (done && inRange(done, since)) {
+      totalDays += daysBetween(task.created_at, done);
+      timedOrders++;
+    }
+  }
+
+  return {
+    totalOrders,
+    completedOrders,
+    completionRate: totalOrders > 0 ? (completedOrders / totalOrders) * 100 : null,
+    avgCompletionDays: timedOrders > 0 ? totalDays / timedOrders : null,
+    timedOrders,
+  };
+}
+
+export interface OnTimeStats {
+  onTime: number;
+  late: number;
+  /** Percentage on time, or null when nothing could be measured. */
+  rate: number | null;
+}
+
+/** Finished orders in the period, judged by the day their last stage was
+ *  ticked against the order's due date. Orders with no due date or no
+ *  recorded finish time can't be judged and are skipped. */
+export function computeOnTimeRate(tasks: Task[], since: Date | null): OnTimeStats {
+  let onTime = 0;
+  let late = 0;
+
+  for (const task of tasks) {
+    const done = finishedAt(task);
+    if (!done || !task.due_date || !inRange(done, since)) continue;
+    if (toISODate(new Date(done)) <= task.due_date) onTime++;
+    else late++;
+  }
+
+  const judged = onTime + late;
+  return { onTime, late, rate: judged > 0 ? (onTime / judged) * 100 : null };
 }
 
 export interface WeeklyTrend {
@@ -19,18 +101,56 @@ export interface WeeklyTrend {
   piecesCompleted: number;
 }
 
-export interface StageBottleneck {
-  label: Label;
-  avgDaysInStage: number;
-  currentLoad: number;
-  overdueCount: number;
+export function computeWeeklyTrends(
+  tasks: Task[],
+  weeks: number,
+  now = new Date()
+): WeeklyTrend[] {
+  const first = rangeStart(weeks, now)!;
+  const buckets: WeeklyTrend[] = [];
+  const byWeek = new Map<string, WeeklyTrend>();
+
+  for (let i = 0; i < weeks; i++) {
+    const ws = new Date(first);
+    ws.setDate(ws.getDate() + i * 7);
+    const bucket: WeeklyTrend = {
+      weekStart: toISODate(ws),
+      weekLabel: ws.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      ordersCreated: 0,
+      ordersCompleted: 0,
+      piecesCompleted: 0,
+    };
+    buckets.push(bucket);
+    byWeek.set(bucket.weekStart, bucket);
+  }
+
+  const weekOf = (timestamp: string) => toISODate(startOfWeek(new Date(timestamp)));
+
+  for (const task of tasks) {
+    const created = byWeek.get(weekOf(task.created_at));
+    if (created) created.ordersCreated++;
+
+    const done = finishedAt(task);
+    const completed = done ? byWeek.get(weekOf(done)) : undefined;
+    if (completed) {
+      completed.ordersCompleted++;
+      completed.piecesCompleted += task.total ?? 0;
+    }
+  }
+
+  return buckets;
 }
 
-export interface OnTimeStats {
-  onTime: number;
-  late: number;
-  noDueDate: number;
-  rate: number;
+/** Weeks from the oldest order to now, so "All time" draws only real
+ *  history. Capped so bars stay readable on a phone. */
+export function allTimeWeeks(tasks: Task[], now = new Date(), cap = 26): number {
+  if (tasks.length === 0) return 1;
+  const oldest = Math.min(...tasks.map((t) => Date.parse(t.created_at)));
+  const weeks =
+    Math.round(
+      (startOfWeek(now).getTime() - startOfWeek(new Date(oldest)).getTime()) / WEEK_MS
+    ) + 1;
+  return Math.min(Math.max(weeks, 1), cap);
 }
 
 export interface CategorySlice {
@@ -39,219 +159,17 @@ export interface CategorySlice {
   percentage: number;
 }
 
-function startOfWeek(date: Date): Date {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const day = d.getDay();
-  const diff = day === 0 ? 6 : day - 1;
-  d.setDate(d.getDate() - diff);
-  return d;
-}
-
-function isoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function weekLabel(d: Date): string {
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function lastDoneTimestamp(task: Task): string | null {
-  let latest: string | null = null;
-  for (const st of task.subtasks) {
-    if (!st.done) return null;
-    if (latest === null || st.created_at > latest) latest = st.created_at;
-  }
-  return latest;
-}
-
-export function computeCompletionStats(tasks: Task[]): CompletionStats {
-  let totalOrders = 0;
-  let completedOrders = 0;
-  let totalPieces = 0;
-  let completedPieces = 0;
-  let totalDays = 0;
-  let daysCount = 0;
-
-  for (const task of tasks) {
-    totalOrders++;
-    if (task.total !== null) totalPieces += task.total;
-
-    if (isTaskComplete(task)) {
-      completedOrders++;
-      if (task.total !== null) completedPieces += task.total;
-
-      const last = lastDoneTimestamp(task);
-      if (last) {
-        const created = new Date(task.created_at).getTime();
-        const finished = new Date(last).getTime();
-        const days = Math.max(0, (finished - created) / 86_400_000);
-        totalDays += days;
-        daysCount++;
-      }
-    }
-  }
-
-  return {
-    totalOrders,
-    completedOrders,
-    completionRate: totalOrders > 0 ? (completedOrders / totalOrders) * 100 : 0,
-    totalPieces,
-    completedPieces,
-    avgCompletionDays: daysCount > 0 ? Math.round(totalDays / daysCount) : 0,
-  };
-}
-
-export function computeWeeklyTrends(
-  tasks: Task[],
-  weeks: number = 8
-): WeeklyTrend[] {
-  const now = new Date();
-  const currentWeekStart = startOfWeek(now);
-
-  const buckets: WeeklyTrend[] = [];
-  for (let i = weeks - 1; i >= 0; i--) {
-    const ws = new Date(currentWeekStart);
-    ws.setDate(ws.getDate() - i * 7);
-    buckets.push({
-      weekStart: isoDate(ws),
-      weekLabel: weekLabel(ws),
-      ordersCreated: 0,
-      ordersCompleted: 0,
-      piecesCompleted: 0,
-    });
-  }
-
-  const firstWeek = buckets[0].weekStart;
-
-  for (const task of tasks) {
-    const createdDate = new Date(task.created_at);
-    const createdWeek = isoDate(startOfWeek(createdDate));
-    if (createdWeek >= firstWeek) {
-      const bucket = buckets.find((b) => b.weekStart === createdWeek);
-      if (bucket) bucket.ordersCreated++;
-    }
-
-    if (isTaskComplete(task)) {
-      const last = lastDoneTimestamp(task);
-      if (last) {
-        const doneDate = new Date(last);
-        const doneWeek = isoDate(startOfWeek(doneDate));
-        if (doneWeek >= firstWeek) {
-          const bucket = buckets.find((b) => b.weekStart === doneWeek);
-          if (bucket) {
-            bucket.ordersCompleted++;
-            bucket.piecesCompleted += task.total ?? 0;
-          }
-        }
-      }
-    }
-  }
-
-  return buckets;
-}
-
-export function computeStageBottlenecks(tasks: Task[]): StageBottleneck[] {
-  const labels = stageLabels(tasks);
-  const results: StageBottleneck[] = [];
-
-  for (const label of labels) {
-    let currentLoad = 0;
-    let overdueCount = 0;
-    let totalDays = 0;
-    let doneCount = 0;
-
-    for (const task of tasks) {
-      for (const st of task.subtasks) {
-        if (!st.labels.some((l) => l.id === label.id)) continue;
-
-        if (st.done) {
-          const created = new Date(st.created_at).getTime();
-          const now = Date.now();
-          const days = Math.max(0, (now - created) / 86_400_000);
-          totalDays += days;
-          doneCount++;
-        } else {
-          currentLoad += task.total ?? 0;
-          if (st.due_date) {
-            const due = parseDate(st.due_date);
-            if (due.getTime() < new Date().setHours(0, 0, 0, 0)) overdueCount++;
-          }
-        }
-      }
-    }
-
-    results.push({
-      label,
-      avgDaysInStage: doneCount > 0 ? Math.round(totalDays / doneCount) : 0,
-      currentLoad,
-      overdueCount,
-    });
-  }
-
-  return results
-    .filter((r) => r.currentLoad > 0 || r.overdueCount > 0)
-    .sort((a, b) => b.currentLoad - a.currentLoad);
-}
-
-export function computeOnTimeRate(tasks: Task[]): OnTimeStats {
-  let onTime = 0;
-  let late = 0;
-  let noDueDate = 0;
-
-  for (const task of tasks) {
-    if (!isTaskComplete(task)) continue;
-
-    if (!task.due_date) {
-      noDueDate++;
-      continue;
-    }
-
-    const dueDate = parseDate(task.due_date);
-    const last = lastDoneTimestamp(task);
-    if (!last) {
-      noDueDate++;
-      continue;
-    }
-
-    const finishedDate = new Date(last);
-    finishedDate.setHours(0, 0, 0, 0);
-    if (finishedDate <= dueDate) onTime++;
-    else late++;
-  }
-
-  const total = onTime + late;
-  return {
-    onTime,
-    late,
-    noDueDate,
-    rate: total > 0 ? (onTime / total) * 100 : 0,
-  };
-}
-
+/**
+ * Open pieces per product label. An order carrying two product labels
+ * counts toward both, so shares are taken of the per-label sum; that keeps
+ * the slices adding up to exactly 100%.
+ */
 export function computeCategoryBreakdown(tasks: Task[]): CategorySlice[] {
-  const totals = new Map<string, { label: Label; pieces: number }>();
-  let grandTotal = 0;
-
-  for (const task of tasks) {
-    if (isTaskComplete(task)) continue;
-    const pieces = task.total ?? 0;
-    if (pieces === 0 || task.labels.length === 0) continue;
-    for (const label of task.labels) {
-      const existing = totals.get(label.id);
-      if (existing) existing.pieces += pieces;
-      else totals.set(label.id, { label, pieces });
-    }
-    grandTotal += pieces;
-  }
-
-  return [...totals.values()]
-    .sort((a, b) => b.pieces - a.pieces)
-    .map((entry) => ({
-      label: entry.label,
-      pieces: entry.pieces,
-      percentage: grandTotal > 0 ? (entry.pieces / grandTotal) * 100 : 0,
-    }));
+  const loads = categoryLoads(tasks).filter((l) => l.openKaos > 0);
+  const sum = loads.reduce((s, l) => s + l.openKaos, 0);
+  return loads.map((l) => ({
+    label: l.label,
+    pieces: l.openKaos,
+    percentage: sum > 0 ? (l.openKaos / sum) * 100 : 0,
+  }));
 }

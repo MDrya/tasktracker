@@ -45,6 +45,9 @@ export function usePushSubscription(createdBy: string | null) {
   const [subscribed, setSubscribed] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Stable, so the toast's auto-dismiss timer isn't restarted every render.
+  const clearError = useCallback(() => setError(null), []);
 
   useEffect(() => {
     const hasKey = Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
@@ -68,6 +71,8 @@ export function usePushSubscription(createdBy: string | null) {
 
   const subscribe = useCallback(async () => {
     setBusy(true);
+    setError(null);
+    let sub: PushSubscription | null = null;
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") {
@@ -79,18 +84,25 @@ export function usePushSubscription(createdBy: string | null) {
       }
       setPermissionDenied(false);
       const reg = await navigator.serviceWorker.register("/sw.js");
-      const sub = await reg.pushManager.subscribe({
+      sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(
           process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
         ),
       });
-      await fetch("/api/push/subscribe", {
+      const res = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...sub.toJSON(), createdBy }),
       });
+      if (!res.ok) throw new Error(`save failed: ${res.status}`);
       setSubscribed(true);
+    } catch {
+      // The server never stored this device, so it would never be sent an
+      // alert. Undo the browser side too, so the bell honestly shows "off".
+      await sub?.unsubscribe().catch(() => {});
+      setSubscribed(false);
+      setError("Couldn't turn on alerts. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -98,18 +110,23 @@ export function usePushSubscription(createdBy: string | null) {
 
   const unsubscribe = useCallback(async () => {
     setBusy(true);
+    setError(null);
     try {
       const reg = await navigator.serviceWorker.getRegistration();
       const sub = await reg?.pushManager.getSubscription();
       if (sub) {
+        // Unsubscribing in the browser is what actually stops alerts; a
+        // leftover server row is pruned the next time a send gets 410 Gone.
         await fetch("/api/push/subscribe", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: sub.endpoint }),
-        });
+        }).catch(() => {});
         await sub.unsubscribe();
       }
       setSubscribed(false);
+    } catch {
+      setError("Couldn't turn off alerts. Try again.");
     } finally {
       setBusy(false);
     }
@@ -121,6 +138,8 @@ export function usePushSubscription(createdBy: string | null) {
     subscribed,
     permissionDenied,
     busy,
+    error,
+    clearError,
     subscribe,
     unsubscribe,
   };

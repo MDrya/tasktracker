@@ -5,85 +5,130 @@ import * as db from "@/lib/data";
 import { getSupabase } from "@/lib/supabase";
 import type { Label, Subtask, SubtaskPatch, Task, TaskPatch } from "@/lib/types";
 
+const BOARD_TABLES = [
+  "tasks",
+  "subtasks",
+  "labels",
+  "task_labels",
+  "subtask_labels",
+] as const;
+
 /** Placeholder Label objects for names the user just typed, shown until
  *  the next refresh swaps in the real rows (chips render by name only). */
 function pendingLabels(names: string[]): Label[] {
-  return [...new Set(names.map((n) => n.trim()).filter(Boolean))].map(
-    (name) => ({ id: `pending:${name}`, name })
-  );
+  return db.cleanLabelNames(names).map((name) => ({ id: `pending:${name}`, name }));
+}
+
+export interface NewSubtaskInput {
+  title: string;
+  dueDate: string | null;
+  labelNames: string[];
 }
 
 /**
  * Board state + realtime sync + optimistic mutations.
  *
- * Every mutation follows the same pattern: apply the change to local
- * state immediately, write to Supabase in the background, refetch on
- * success (server truth), and roll back to a snapshot on failure.
- * Changes made by other people arrive via a realtime subscription that
- * triggers a debounced refetch.
+ * Mutations apply to local state immediately and write to Supabase in the
+ * background. Reloads from the server are coordinated: they wait until no
+ * write is in flight, and a reload that started before a newer write is
+ * discarded. Without that, ticking several boxes quickly makes them flicker
+ * back as an older reload lands on top of newer optimistic state.
  */
 export function useBoard(enabled: boolean) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Stable, so the toast's auto-dismiss timer isn't restarted every render.
+  const clearError = useCallback(() => setError(null), []);
 
   const tasksRef = useRef<Task[]>(tasks);
   useEffect(() => {
     tasksRef.current = tasks;
   }, [tasks]);
 
-  const refresh = useCallback(async () => {
-    setTasks(await db.fetchBoard());
+  const inFlight = useRef(0);
+  const writeSeq = useRef(0);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const load = useCallback(async () => {
+    const seq = writeSeq.current;
+    const data = await db.fetchBoard();
+    // A write started meanwhile; its own completion schedules a fresh load.
+    if (inFlight.current > 0 || seq !== writeSeq.current) return;
+    setTasks(data);
   }, []);
 
-  // Google Sheets mirror. Only the client that made the change schedules a
-  // sync (rather than everyone reacting to the realtime event), and rapid
-  // edits collapse into one push. Best-effort by design: the board is the
-  // source of truth, so a failed sync is never surfaced to the user — the
-  // next change re-syncs the whole sheet anyway.
-  const sheetSyncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined
-  );
-  const scheduleSheetSync = useCallback(() => {
+  // Local writes and the realtime echo of those same writes arrive close
+  // together, so one debounced load covers both.
+  const scheduleRefresh = useCallback(() => {
+    clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      if (inFlight.current > 0) return;
+      load().catch(() => {
+        /* transient failure; the next change retries */
+      });
+    }, 300);
+  }, [load]);
+
+  // Google Sheets mirror. Only the client that made the change syncs, and
+  // rapid edits collapse into one push. If the app is hidden or closed
+  // before the delay runs out, the pending sync is sent immediately with
+  // keepalive so it survives the page going away.
+  const sheetSyncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const sheetSyncPending = useRef(false);
+
+  const syncSheetNow = useCallback(() => {
     clearTimeout(sheetSyncTimer.current);
-    sheetSyncTimer.current = setTimeout(() => {
-      fetch("/api/sheets/sync", { method: "POST" }).catch(() => {});
-    }, 3000);
+    if (!sheetSyncPending.current) return;
+    sheetSyncPending.current = false;
+    fetch("/api/sheets/sync", { method: "POST", keepalive: true }).catch(() => {});
   }, []);
 
-  useEffect(() => () => clearTimeout(sheetSyncTimer.current), []);
+  const scheduleSheetSync = useCallback(() => {
+    sheetSyncPending.current = true;
+    clearTimeout(sheetSyncTimer.current);
+    sheetSyncTimer.current = setTimeout(syncSheetNow, 3000);
+  }, [syncSheetNow]);
 
-  // Initial load + realtime subscription (any change on any board table
-  // triggers one debounced refetch — simple and always consistent).
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") syncSheetNow();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", syncSheetNow);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", syncSheetNow);
+      syncSheetNow();
+    };
+  }, [syncSheetNow]);
+
+  // Initial load + realtime. Only the board tables are watched, so push
+  // subscriptions and other tables never trigger a reload.
   useEffect(() => {
     if (!enabled) return;
 
-    refresh()
+    load()
       .catch(() => setError("Couldn't load the board. Check your connection."))
       .finally(() => setLoading(false));
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const supabase = getSupabase();
-    const channel = supabase
-      .channel("board-changes")
-      .on("postgres_changes", { event: "*", schema: "public" }, () => {
-        clearTimeout(timer);
-        timer = setTimeout(() => {
-          refresh().catch(() => {
-            /* transient refetch failure; next event retries */
-          });
-        }, 150);
-      })
-      .subscribe();
+    let channel = supabase.channel("board-changes");
+    for (const table of BOARD_TABLES) {
+      channel = channel.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table },
+        scheduleRefresh
+      );
+    }
+    channel.subscribe();
 
     return () => {
-      clearTimeout(timer);
+      clearTimeout(refreshTimer.current);
       supabase.removeChannel(channel);
     };
-  }, [enabled, refresh]);
+  }, [enabled, load, scheduleRefresh]);
 
-  /** Optimistic-apply, persist, refetch; roll back and surface a message
-   *  on failure. */
   const mutate = useCallback(
     async (
       optimistic: (prev: Task[]) => Task[],
@@ -91,17 +136,37 @@ export function useBoard(enabled: boolean) {
       failMessage: string
     ) => {
       const snapshot = tasksRef.current;
-      setTasks(optimistic(snapshot));
+      writeSeq.current++;
+      inFlight.current++;
+      setTasks(optimistic);
+
+      let failed = false;
       try {
         await persist();
-        await refresh();
+      } catch {
+        failed = true;
+      } finally {
+        inFlight.current--;
+      }
+
+      if (!failed) {
         scheduleSheetSync();
+        scheduleRefresh();
+        return;
+      }
+
+      setError(failMessage);
+      // Undo by reloading server truth, which keeps any other writes that
+      // succeeded meanwhile. Only if that fails too (offline) fall back to
+      // the pre-change snapshot.
+      if (inFlight.current > 0) return;
+      try {
+        setTasks(await db.fetchBoard());
       } catch {
         setTasks(snapshot);
-        setError(failMessage);
       }
     },
-    [refresh, scheduleSheetSync]
+    [scheduleRefresh, scheduleSheetSync]
   );
 
   // ----- tasks ------------------------------------------------------------
@@ -132,7 +197,14 @@ export function useBoard(enabled: boolean) {
         (prev) => [...prev, task],
         () =>
           db.createTask(
-            { id: task.id, title, start_date: startDate, due_date: dueDate, total, created_by: createdBy },
+            {
+              id: task.id,
+              title,
+              start_date: startDate,
+              due_date: dueDate,
+              total,
+              created_by: createdBy,
+            },
             labelNames
           ),
         "Couldn't add the task."
@@ -173,6 +245,47 @@ export function useBoard(enabled: boolean) {
 
   // ----- subtasks ---------------------------------------------------------
 
+  /** Add several subtasks in one step. They are written one after another
+   *  so their creation order, which is their display order, is preserved. */
+  const addSubtasks = useCallback(
+    (taskId: string, items: NewSubtaskInput[], createdBy: string | null) => {
+      const now = Date.now();
+      const subtasks: Subtask[] = items.map((item, i) => ({
+        id: crypto.randomUUID(),
+        task_id: taskId,
+        title: item.title,
+        due_date: item.dueDate,
+        done: false,
+        done_at: null,
+        created_by: createdBy,
+        created_at: new Date(now + i).toISOString(),
+        labels: pendingLabels(item.labelNames),
+      }));
+      return mutate(
+        (prev) =>
+          prev.map((t) =>
+            t.id === taskId ? { ...t, subtasks: [...t.subtasks, ...subtasks] } : t
+          ),
+        async () => {
+          for (const [i, st] of subtasks.entries()) {
+            await db.createSubtask(
+              {
+                id: st.id,
+                task_id: taskId,
+                title: st.title,
+                due_date: st.due_date,
+                created_by: createdBy,
+              },
+              items[i].labelNames
+            );
+          }
+        },
+        items.length === 1 ? "Couldn't add the subtask." : "Couldn't add the stages."
+      );
+    },
+    [mutate]
+  );
+
   const addSubtask = useCallback(
     (
       taskId: string,
@@ -180,37 +293,8 @@ export function useBoard(enabled: boolean) {
       dueDate: string | null,
       labelNames: string[],
       createdBy: string | null
-    ) => {
-      const subtask: Subtask = {
-        id: crypto.randomUUID(),
-        task_id: taskId,
-        title,
-        due_date: dueDate,
-        done: false,
-        created_by: createdBy,
-        created_at: new Date().toISOString(),
-        labels: pendingLabels(labelNames),
-      };
-      return mutate(
-        (prev) =>
-          prev.map((t) =>
-            t.id === taskId ? { ...t, subtasks: [...t.subtasks, subtask] } : t
-          ),
-        () =>
-          db.createSubtask(
-            {
-              id: subtask.id,
-              task_id: taskId,
-              title,
-              due_date: dueDate,
-              created_by: createdBy,
-            },
-            labelNames
-          ),
-        "Couldn't add the subtask."
-      );
-    },
-    [mutate]
+    ) => addSubtasks(taskId, [{ title, dueDate, labelNames }], createdBy),
+    [addSubtasks]
   );
 
   const editSubtask = useCallback(
@@ -225,9 +309,7 @@ export function useBoard(enabled: boolean) {
                     ...st,
                     ...patch,
                     labels:
-                      labelNames !== undefined
-                        ? pendingLabels(labelNames)
-                        : st.labels,
+                      labelNames !== undefined ? pendingLabels(labelNames) : st.labels,
                   }
                 : st
             ),
@@ -245,7 +327,9 @@ export function useBoard(enabled: boolean) {
           prev.map((t) => ({
             ...t,
             subtasks: t.subtasks.map((st) =>
-              st.id === id ? { ...st, done } : st
+              st.id === id
+                ? { ...st, done, done_at: done ? new Date().toISOString() : null }
+                : st
             ),
           })),
         () => db.updateSubtask(id, { done }),
@@ -314,11 +398,12 @@ export function useBoard(enabled: boolean) {
     tasks,
     loading,
     error,
-    clearError: () => setError(null),
+    clearError,
     addTask,
     editTask,
     removeTask,
     addSubtask,
+    addSubtasks,
     editSubtask,
     toggleSubtask,
     removeSubtask,

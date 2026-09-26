@@ -13,6 +13,8 @@ export interface Subtask {
   title: string;
   due_date: string | null; // ISO date "YYYY-MM-DD"
   done: boolean;
+  /** When it was last ticked; null if open, or ticked before tracking began. */
+  done_at: string | null;
   created_by: string | null;
   created_at: string;
   labels: Label[];
@@ -23,7 +25,7 @@ export interface Task {
   title: string;
   due_date: string | null; // ISO date "YYYY-MM-DD"
   start_date: string | null;
-  total: number | null; // order total; main tasks only — subtasks have none
+  total: number | null; // number of pieces (kaos); main tasks only
   created_by: string | null;
   created_at: string;
   updated_at: string;

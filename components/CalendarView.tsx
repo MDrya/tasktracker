@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { dayDiff, shortDate, toISODate } from "@/lib/dates";
 import type { Task, UrgencyLevel } from "@/lib/types";
 import {
   effectiveDueDate,
@@ -12,11 +13,13 @@ import ProgressBar from "./ProgressBar";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+// Same meaning as the board's due badges: red = overdue or within 2 days,
+// amber = within a week, green = later.
 const BAR_STYLES: Record<UrgencyLevel, string> = {
-  overdue: "bg-red-500 text-white",
-  urgent: "bg-amber-500 text-white",
-  soon: "bg-amber-300 text-amber-900",
-  later: "bg-indigo-500 text-white",
+  overdue: "bg-red-600 text-white",
+  urgent: "bg-red-400 text-white",
+  soon: "bg-amber-400 text-amber-950",
+  later: "bg-emerald-500 text-white",
   none: "bg-neutral-400 text-white",
 };
 
@@ -57,21 +60,6 @@ interface BarSegment {
   complete: boolean;
 }
 
-function fmt(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function local(iso: string): Date {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function dayDiff(a: string, b: string): number {
-  return Math.round(
-    (local(b).getTime() - local(a).getTime()) / 86_400_000
-  );
-}
-
 function labelColor(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
@@ -88,13 +76,13 @@ function getMonthGrid(year: number, month: number): DayInfo[][] {
   const endDow = last.getDay();
   const padAfter = endDow === 0 ? 0 : 7 - endDow;
   const totalDays = padBefore + last.getDate() + padAfter;
-  const today = fmt(new Date());
+  const today = toISODate(new Date());
   const current = new Date(year, month, 1 - padBefore);
   const weeks: DayInfo[][] = [];
 
   for (let d = 0; d < totalDays; d++) {
     if (d % 7 === 0) weeks.push([]);
-    const dateStr = fmt(current);
+    const dateStr = toISODate(current);
     weeks[weeks.length - 1].push({
       date: dateStr,
       dayNum: current.getDate(),
@@ -112,13 +100,19 @@ function getMonthGrid(year: number, month: number): DayInfo[][] {
 function getTaskBars(tasks: Task[]): TaskBar[] {
   return tasks
     .filter((t) => t.due_date)
-    .map((t) => ({
-      task: t,
-      start: t.start_date || t.due_date!,
-      end: t.due_date!,
-      urgency: urgencyLevel(effectiveDueDate(t)),
-      complete: isTaskComplete(t),
-    }));
+    .map((t) => {
+      const end = t.due_date!;
+      // A start after the due date (entered before the form checked it)
+      // would draw a negative-width bar, so it collapses to the due day.
+      const start = t.start_date && t.start_date <= end ? t.start_date : end;
+      return {
+        task: t,
+        start,
+        end,
+        urgency: urgencyLevel(effectiveDueDate(t)),
+        complete: isTaskComplete(t),
+      };
+    });
 }
 
 function assignLanes(
@@ -184,11 +178,21 @@ export default function CalendarView({
 
   const weeks = useMemo(() => getMonthGrid(year, month), [year, month]);
   const bars = useMemo(() => getTaskBars(tasks), [tasks]);
+  const undated = tasks.length - bars.length;
 
   const selectedTask = useMemo(
     () => tasks.find((t) => t.id === selectedTaskId) ?? null,
     [tasks, selectedTaskId]
   );
+
+  // The detail panel sits below the month grid, usually off-screen on a
+  // phone, so bring it into view when a bar is tapped.
+  const detailRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (selectedTaskId) {
+      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selectedTaskId]);
 
   const prev = () => {
     if (month === 0) {
@@ -225,7 +229,7 @@ export default function CalendarView({
       <div className="flex items-center justify-between rounded-2xl bg-white px-4 py-3">
         <button
           onClick={prev}
-          className="flex h-9 w-9 items-center justify-center rounded-xl text-lg font-medium text-neutral-600 active:bg-neutral-100"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-lg font-medium text-neutral-600 active:bg-neutral-100"
           aria-label="Previous month"
         >
           ‹
@@ -236,14 +240,14 @@ export default function CalendarView({
           </h2>
           <button
             onClick={goToday}
-            className="rounded-lg bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600 active:bg-indigo-100"
+            className="min-h-9 rounded-lg bg-indigo-50 px-3 text-xs font-medium text-indigo-600 active:bg-indigo-100"
           >
             Today
           </button>
         </div>
         <button
           onClick={next}
-          className="flex h-9 w-9 items-center justify-center rounded-xl text-lg font-medium text-neutral-600 active:bg-neutral-100"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-xl text-lg font-medium text-neutral-600 active:bg-neutral-100"
           aria-label="Next month"
         >
           ›
@@ -307,7 +311,7 @@ export default function CalendarView({
               {lanes.length > 0 && (
                 <div className="px-0.5 pb-1">
                   {lanes.map((lane, li) => (
-                    <div key={li} className="relative mt-0.5 h-5">
+                    <div key={li} className="relative mt-0.5 h-7">
                       {lane.map((seg) => (
                         <button
                           key={seg.task.id}
@@ -318,7 +322,7 @@ export default function CalendarView({
                                 : seg.task.id
                             )
                           }
-                          className={`absolute top-0 h-full overflow-hidden text-left text-[10px] font-medium leading-tight ${
+                          className={`absolute top-0 h-full overflow-hidden text-left text-[11px] font-medium leading-7 ${
                             seg.complete
                               ? "bg-neutral-200 text-neutral-500 line-through opacity-60"
                               : BAR_STYLES[seg.urgency]
@@ -356,9 +360,16 @@ export default function CalendarView({
         })}
       </div>
 
+      {undated > 0 && (
+        <p className="mt-2 px-1 text-xs text-neutral-400">
+          {undated} order{undated === 1 ? " has" : "s have"} no due date and
+          {undated === 1 ? " isn’t" : " aren’t"} shown.
+        </p>
+      )}
+
       {/* Selected task detail */}
       {selectedTask && (
-        <div className="mt-3 rounded-2xl bg-white p-4">
+        <div ref={detailRef} className="mt-3 scroll-mb-4 rounded-2xl bg-white p-4">
           <div className="flex items-start justify-between gap-2">
             <h3 className="text-base font-medium text-neutral-900">
               {selectedTask.title}
@@ -375,17 +386,17 @@ export default function CalendarView({
           <div className="mt-2 flex flex-wrap gap-1.5">
             {selectedTask.start_date && (
               <span className="rounded-lg bg-neutral-50 px-2 py-0.5 text-xs text-neutral-600">
-                Start {selectedTask.start_date}
+                Start {shortDate(selectedTask.start_date)}
               </span>
             )}
             {selectedTask.due_date && (
               <span className="rounded-lg bg-neutral-50 px-2 py-0.5 text-xs text-neutral-600">
-                Due {selectedTask.due_date}
+                Due {shortDate(selectedTask.due_date)}
               </span>
             )}
             {selectedTask.total !== null && (
               <span className="rounded-lg bg-neutral-50 px-2 py-0.5 text-xs text-neutral-600">
-                Total {selectedTask.total}
+                {selectedTask.total} pcs
               </span>
             )}
           </div>
@@ -435,7 +446,7 @@ export default function CalendarView({
                     )}
                     {st.due_date && (
                       <span className="shrink-0 text-xs text-neutral-400">
-                        {st.due_date}
+                        {shortDate(st.due_date)}
                       </span>
                     )}
                   </li>

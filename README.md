@@ -53,16 +53,22 @@ The UI never talks to Supabase directly — everything goes through
    (any name/region; note the database password, though this app never needs it).
 2. Wait for the project to finish provisioning.
 
-### 2. Run the migration
+### 2. Run the migrations
 
-1. In the Supabase dashboard, open **SQL Editor**.
-2. Paste the entire contents of
-   [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql)
-   and click **Run**.
+In the Supabase dashboard, open **SQL Editor** and run each file in
+[`supabase/migrations/`](supabase/migrations/) in order, pasting its entire
+contents and clicking **Run**:
 
-This creates the five tables, enables row level security with permissive
-policies (the board is intentionally public-with-link in v1), and adds all
-tables to the realtime publication.
+1. `0001_init.sql` — the five board tables, permissive row level security
+   (the board is intentionally public-with-link), and realtime.
+2. `0002_pieces_and_push.sql` — the piece count on orders and the
+   push-subscription table for due-date alerts.
+3. `0003_start_date.sql` — order start dates for the calendar.
+4. `0004_done_at_and_label_case.sql` — records when each subtask is ticked
+   (used by Analytics) and makes label names case-insensitive, merging
+   existing duplicates like "Jahit"/"jahit".
+
+0002 and 0004 are safe to re-run.
 
 ### 3. Set environment variables
 
@@ -126,8 +132,8 @@ SHEETS_SHARED_SECRET=the-same-string-you-put-in-the-script
 The sheet gets one row per subtask, with the parent order repeated on each
 row so you can sort and filter freely:
 
-| Order | Order total | Order due | Order status | Subtask | Subtask due | Subtask done |
-|-------|-------------|-----------|--------------|---------|-------------|--------------|
+| Order | Order labels | Kaos (pcs) | Order start | Order due | Order status | Subtask | Subtask due | Subtask done |
+|-------|--------------|------------|-------------|-----------|--------------|---------|-------------|--------------|
 
 Orders with no subtasks get a single row with the subtask columns blank.
 
@@ -144,15 +150,19 @@ are left alone.
   checkbox visibly re-sort the list (`lib/urgency.ts`).
 - **Task badge shows effective urgency**: the collapsed card's date badge uses
   the effective due date so what you see matches the sort order.
-- **Realtime = refetch**: any change to any board table triggers one debounced
-  board refetch. Simple, always consistent, and cheap at team-board scale.
+- **Realtime = refetch**: any change to a board table triggers one debounced
+  board refetch, held back while this device's own writes are in flight so
+  quick successive taps don't flicker (`hooks/useBoard.ts`).
 - **Deleting a label** removes it from every task/subtask (join rows cascade)
   but never deletes tasks.
-- **Order total is a plain number on main tasks only**: no currency symbol or
-  formatting, and subtasks never carry one (`showTotal` in
-  `components/EntityForm.tsx`).
-- **Adding a subtask collapses the card**, returning you to the board
-  overview rather than leaving the card open (`components/TaskCard.tsx`).
+- **The order's number is its piece count (kaos)**, a whole number on main
+  tasks only. All capacity and analytics figures read it as pieces, so it
+  must never hold a price (`showTotal` in `components/EntityForm.tsx`).
+- **Adding a subtask keeps the card open** so several stages can be entered
+  in a row; "Quick add stage" adds the usual stages in one tap, in the order
+  past orders used them (`components/TaskCard.tsx`).
+- **Finished orders move to a collapsed "Finished orders" section** three
+  days after their last stage is ticked. Search still finds them.
 - **Finished orders sink to the bottom**: a task counts as finished once
   every subtask is checked. A task with *no* subtasks can never be finished —
   there's nothing to check off — so it keeps its normal urgency position
